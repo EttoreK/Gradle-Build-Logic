@@ -1,0 +1,20 @@
+// Declaração de plugins
+// plugins {}
+plugins.apply(libs.plugins.buildLogicJavaGeral.get().getPluginId()) // configurações gerais
+plugins.apply(libs.plugins.buildLogicJavaActions.get().getPluginId()) // ações de build
+// Biblioteras para serem usadas no código
+dependencies {
+    implementation libs.spBtStrTom
+    implementation(libs.spBtStrThy) {
+        exclude group: 'org.yaml', module: 'snakeyaml'
+        exclude group: 'io.micrometer'
+    }
+    implementation(libs.spBtStrWeb) {
+        exclude group: 'org.yaml', module: 'snakeyaml'
+        exclude group: 'org.apache.tomcat.embed', module: 'tomcat-embed-websocket'
+        exclude group: 'org.springframework.boot', module: 'spring-boot-starter-logging'
+        exclude group: 'org.springframework.boot', module: 'spring-boot-jarmode-tools'
+    }
+    testImplementation libs.spBtStrTest
+    testImplementation libs.spBtStrTestMvc
+}

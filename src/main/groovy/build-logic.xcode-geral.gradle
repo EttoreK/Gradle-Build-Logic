@@ -1,0 +1,99 @@
+// plugins {}
+// Atalhos para libs.versions.toml para facilitar a leitura
+Object ver = libs.versions
+Object val = ver.valores
+Object xcc = val.xcodeConfig
+Object propsLocal = gradle.ext.propsLocal
+// Definição de provedores para acesso à valores de configuração e diretórios
+Directory projDir = layout.projectDirectory // diretório app do build.gradle
+Provider<Boolean> eMacProv = providers.systemProperty('os.name').map { os ->
+    os.toLowerCase().contains('mac')
+}
+Provider<String> srcDir = projDir.dir(xcc.appDir) // srcMainDir.dir('swift')
+Provider<String> winDiscProv = project.providers.provider { 
+    propsLocal.getProperty('unidade.win', 'C') 
+}
+Provider<String> buildXDirProv = val.buildDir.xcode
+Provider<String> macDonoProv = project.providers.provider { propsLocal.getProperty('mac.dono') }
+Provider<String> macSedeProv = project.providers.provider { propsLocal.getProperty('mac.sede') }
+Provider<String> macDirProv = project.providers.provider { propsLocal.getProperty('mac.dir') }
+Provider<String> versaoNumeroProv = providers.gradleProperty('appVerNum')
+Provider<String> appleIdProv = providers.gradleProperty('apple.appleId')
+Provider<String> appleSenhaProv = project.providers.provider { 
+    propsLocal.getProperty('apple.senha') 
+}
+Provider<String> idTimeProv = project.providers.provider {
+    propsLocal.getProperty('apple.idTime', 'TAPABURACO')
+}
+Provider<String> certificadoProv = project.providers.provider {
+    propsLocal.getProperty('apple.certificado',)
+}
+Provider<String> nomePerfilProv = project.providers.provider {
+    propsLocal.getProperty('apple.nomePerfil')
+}
+Provider<String> metodoProv = project.providers.provider {
+    propsLocal.getProperty('apple.metodo', 'app-store-connect')
+}
+Provider<String> simuladorUsualProv = project.providers.provider {
+    propsLocal.getProperty('simulador.ios')
+}
+Provider<String> nomeAppProv = providers.gradleProperty('projNome')
+Provider<String> xcodeProjProv = nomeAppProv.map { it + '.xcodeproj' }
+Provider<String> xcUnitTesteNomeProv = xcc.nomeUnit
+Provider<String> xcUITesteNomeProv = xcc.nomeUI
+Provider<String> xcIdPacoteAppProv = (project.providers.provider {appIdPacote}).zip(nomeAppProv){
+    id, app -> "${id}.${app.toLowerCase()}" 
+}
+Provider<String> vmDirProv = macDirProv.zip(nomeAppProv) { String dir, String app ->
+    new File(dir, app).path.replace(File.separator, '/')
+}
+Provider<String> vmAppDirProv = vmDirProv.map { String dir -> 
+    new File(dir, 'app').path.replace(File.separator, '/') 
+}
+if (!macDirProv){ throw new GradleException('Nenhum diretório configurado para MacOs') }
+// Se necessário encapsula o comando em uma chamada ssh para a VM
+Closure<List<String>> comandoRemoto = { List<String> cmdEntrada ->
+    if (eMacProv.get()) { return ['bash', '-c', cmdEntrada.join(' ')] } 
+    else {
+        if (!macDonoProv.isPresent() || !macSedeProv.isPresent()){
+            throw new GradleException('Credenciais não configuradas pra MacOs')
+        }
+        String vmDono = macDonoProv.get()
+        String vmSede = macSedeProv.get()
+        List<String> cmdRemoto = cmdEntrada.collect {arg -> 
+            if (!(val.cmd.vm.hasProperty(arg))) { return arg } 
+            else { return val.cmd.vm.(arg).get() }
+        }
+        // O comando final a ser executado via SSH
+        String cmdSaida = "\"cd \'${vmAppDirProv.get()}\' && ${cmdRemoto.join(' ')}\""
+        
+        return ['ssh', "${vmDono}@${vmSede}", cmdSaida]
+    }
+}
+// API / Exportação das variáveis
+project.ext.set('xcodeVars', [
+    ver: ver,
+    val: val,
+    xcc: xcc,
+    projDir: projDir,
+    srcDir: srcDir,
+    nomeAppProv: nomeAppProv,
+    xcodeProjProv: xcodeProjProv,
+    xcUnitTesteNomeProv: xcUnitTesteNomeProv,
+    xcUITesteNomeProv: xcUITesteNomeProv,
+    xcIdPacoteAppProv: xcIdPacoteAppProv,
+    vmDirProv: vmDirProv,
+    vmAppDirProv: vmAppDirProv,
+    eMacProv: eMacProv,
+    comandoRemoto: comandoRemoto,
+    winDiscProv: winDiscProv,
+    idTimeProv: idTimeProv,
+    appleIdProv: appleIdProv,
+    appleSenhaProv: appleSenhaProv,
+    certificadoProv: certificadoProv,
+    nomePerfilProv: nomePerfilProv,
+    metodoProv: metodoProv,
+    simuladorUsualProv: simuladorUsualProv,
+    versaoNumeroProv: versaoNumeroProv,
+    buildXDirProv: buildXDirProv
+])

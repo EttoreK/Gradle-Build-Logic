@@ -1,0 +1,262 @@
+// Declaração de plugins
+// plugins {}
+// Atalhos para facilitar a leitura
+Object propsLocal = gradle.ext.propsLocal
+// Provedores para acesso lazy às variáveis
+Provider<Boolean> eWindowsProv = providers.systemProperty('os.name').map { os ->
+    os.toLowerCase().contains('windows')
+}
+Provider<Directory> buildDir = layout.buildDirectory
+Provider<Directory> deployDirProv = buildDir.dir('distributions')
+Provider<String> nomeAppProv = providers.gradleProperty('projNome')
+Provider<String> espNomeProv = providers.gradleProperty('espolioDir').orElse('espolio')
+Provider<String> verNumProv = providers.gradleProperty('appVerNum')
+Provider<String> winDiscProv = project.providers.provider {
+    propsLocal.getProperty('unidade.win', 'C')
+}
+Provider<RegularFile> jarFinal = buildDir.file(
+    nomeAppProv.flatMap { 
+        nome -> verNumProv.map { versao -> "distributions/${nome}-${versao}.jar" } 
+    }
+)
+boolean jarMagro = project.hasProperty('thin') && project.property('thin') == 'true' //-Pthin=true
+// Tarefas personalizadas
+tasks.named('jar') { enabled = false } // destivado para não gerar jar parciais
+// Configurado para alterar o nome do jar gerado e otimizar o tamanho do arquivo
+tasks.named('bootJar') { // -Pfat=true
+    enabled = !jarMagro
+
+    if (!jarMagro) {
+        mustRunAfter tasks.named('minWebJar')
+        inputs.files(tasks.named('minWebJar'))
+
+        archiveBaseName.set(nomeAppProv)
+        archiveVersion.set(verNumProv)
+        archiveClassifier.set('')
+        destinationDirectory.set(deployDirProv)
+        // Injeta as classes otimizadas pelo ProGuard
+        from(zipTree(buildDir.file('intermediates/minified-project.jar'))) {
+            into 'BOOT-INF/classes'
+        }
+        // Filtra o classpath, mantem todas os .jar, remove pastas locais que o ProGuard processou
+        classpath = classpath.filter { file ->
+            file.isFile() && 
+            file.name.endsWith('.jar') &&
+            !file.name.contains('spring-boot-jarmode-tools') &&
+            !file.name.contains('bib-lista') // remove o JAR duplicado
+        }
+        
+        exclude 'main/**', '**/classpath.idx', '**/layers.idx', '**/spring-boot-jarmode-tools-*.jar'
+        exclude 'BOOT-INF/classpath.idx', 'BOOT-INF/layers.idx'
+        entryCompression = ZipEntryCompression.DEFLATED
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    }
+}
+// Configurado para alterar o nome do jar gerado e otimizar o tamanho dos arquivos
+tasks.register('orderJar', Jar) { //padrão
+    group = 'WebActions'
+    description = 'Gera o JAR magro e copia as dependências para a pasta lib/'
+    enabled = jarMagro
+
+    if (jarMagro) {
+        mustRunAfter tasks.named('minWebJar')
+        inputs.files(tasks.named('minWebJar'))
+        finalizedBy tasks.named('orderLibs')
+        
+        archiveBaseName.set(nomeAppProv)
+        archiveVersion.set(verNumProv)
+        archiveClassifier.set('')
+        destinationDirectory.set(deployDirProv)
+        // Puxa apenas o zip do ProGuard
+        from(zipTree(buildDir.file('intermediates/minified-project.jar')))
+        
+        manifest {
+            attributes(
+                'Main-Class': 'com.oboco.web.LoggerApplication', // Sua classe principal
+                'Class-Path': configurations.runtimeClasspath.files
+                    .findAll { !it.name.startsWith('bib-lista') }
+                    .collect { "lib/$it.name" }.join(' ')
+            )
+        }
+    }
+}
+// A Cópia das Libs separada
+tasks.register('orderLibs', Copy) {
+    group = 'WebActions'
+    description = 'Copia as dependências para a pasta lib/'
+    enabled = jarMagro
+
+    if (jarMagro) {
+        mustRunAfter tasks.named('orderJar') // Obriga o JAR a nascer primeiro
+        
+        into deployDirProv.map { dir -> dir.dir('lib') }
+        from configurations.runtimeClasspath
+        exclude 'spring-boot-jarmode-tools-*.jar'
+    }
+}
+// Apaga a pasta do inteira de build
+tasks.register('cleanWeb') {
+    group = 'WebActions'
+    description = 'Constroi o JAR para o aplicativo java web'
+    outputs.upToDateWhen { false }
+    finalizedBy tasks.named('clean')
+}
+
+tasks.register('minWebJar', proguard.gradle.ProGuardTask) {
+    mustRunAfter tasks.named('classes')
+    inputs.files(tasks.named('classes'))
+    
+    injars sourceSets.main.output, filter: '!main/' // pega as saídas compiladas
+    // .jar temporário apenas com classes magras
+    Provider<RegularFile> miniJarProv = buildDir.file('intermediates/minified-project.jar')
+    outjars miniJarProv
+    libraryjars "${System.getProperty('java.home')}/jmods"
+    // Referencia as libs externas mas não inclui no processo de shrinking
+    libraryjars configurations.runtimeClasspath
+    configuration file('proguard-web.pro')
+
+    doFirst {
+        File miniJar = miniJarProv.get().asFile
+        if (miniJar.exists()) miniJar.delete()
+        miniJar.parentFile.mkdirs()
+    }
+}
+// Build sem testes
+tasks.register('buildWeb') {
+    group = 'WebActions'
+    if (jarMagro) {
+        mustRunAfter tasks.named('orderJar')
+        inputs.files(tasks.named('orderJar'))
+    } else {
+        mustRunAfter tasks.named('bootJar')
+        inputs.files(tasks.named('bootJar'))
+    }
+    outputs.file jarFinal
+}
+// Roda em terminal externo
+tasks.register('runWeb') {
+    group = 'WebActions'
+    description = 'Executa se o JAR já existente na pasta libs'
+    mustRunAfter assemble // só tenta rodar se o arquivo realmente existir
+    inputs.files(tasks.named('buildWeb'))
+    outputs.upToDateWhen { false }
+
+    doFirst {
+        File deployDir = deployDirProv.get().asFile
+        // Procura pelo JAR magro (que termina com -thin.jar)
+        File jarArq = deployDir.listFiles()?.find { it.isFile() && it.name.endsWith('.jar') }
+        
+        if (jarArq == null || !jarArq.exists()) {
+             throw new GradleException("JAR magro não encontrado em ${deployDir.absolutePath}")
+        }
+
+        ProcessBuilder pb
+        if (System.getProperty('os.name').toLowerCase().contains('windows')) {
+            pb = new ProcessBuilder('cmd', '/c', 'start', 'cmd', '/k', 'java', '-jar', jarArq.name)
+        } else { pb = new ProcessBuilder('sh', '-c', 'java', '-jar', jarArq.name, '&') }
+
+        pb.directory(deployDir)
+        pb.start()
+    }
+}
+// Realiza todos os testes
+tasks.register('testWeb') {
+    group = 'WebActions'
+    description = 'Realiza os testes para o aplicativo web'
+    finalizedBy tasks.named('check')
+    finalizedBy tasks.named('test')
+}
+// Garante a saída dos resultados dos testes
+tasks.withType(Test).configureEach {
+    outputs.upToDateWhen { false }
+
+    useJUnitPlatform() // liga o motor de testes do JUnit Platform
+
+    jvmArgs('-Xshare:off') // desliga o Class Data Sharing para evitar o warning da JVM 
+    jvmArgs('-XX:+EnableDynamicAgentLoading') // permite o Mockito a injetar o agente de testes
+
+    systemProperty 'spring.main.banner-mode', 'off' // desliga o Logo ASCII gigante do Spring
+    systemProperty 'logging.level.root', 'WARN' // esconde os INFOs de inicio
+
+    testLogging {
+        // Mostra no terminal os testes que passaram, foram pulados ou falharam
+        events 'passed', 'skipped', 'failed'
+        showStandardStreams = false // saída padrão do console
+        // Se der erro, mostra o rastro completo do problema
+        exceptionFormat = 'full'
+        showCauses = true
+        showStackTraces = true
+    }
+
+    addTestListener(new org.gradle.api.tasks.testing.TestListener() {
+        void beforeSuite(org.gradle.api.tasks.testing.TestDescriptor suite) {}
+        void beforeTest(org.gradle.api.tasks.testing.TestDescriptor test) {}
+        void afterTest(
+            org.gradle.api.tasks.testing.TestDescriptor test, 
+            org.gradle.api.tasks.testing.TestResult result
+        ) {}
+        void afterSuite(
+            org.gradle.api.tasks.testing.TestDescriptor desc, 
+            org.gradle.api.tasks.testing.TestResult result) {
+            // Garante que é a execução raiz de todos os testes
+            if (!desc.parent) { 
+                String total = """\
+                    || Total de testes: ${result.testCount} |
+                    | sucessos: ${result.successfulTestCount} |
+                    | falhas: ${result.failedTestCount} |
+                    | pulados: ${result.skippedTestCount} ||"""
+                println "\n======================================================================="
+                println "RESULTADO DOS TESTES: ${result.resultType}"
+                println total.stripIndent().replaceAll('\n', '')
+                println "======================================================================="
+            }
+        }
+    })
+}
+// Cria um ícone para a página web
+tasks.register('webIco') {
+    group = 'Web Actions'
+    description = 'Gera o icone.png para a aplicação Web'
+
+    Provider<RegularFile> svgFundoProv = espNomeProv.map { espDir ->
+        project.rootProject.layout.projectDirectory.file("${espDir}/icones/appBackground.svg")
+    }
+    Provider<RegularFile> svgFrenteProv = espNomeProv.map { espDir ->
+        project.rootProject.layout.projectDirectory.file("${espDir}/icones/appForeground.svg")
+    }
+    Provider<RegularFile> pngArqProv = buildDir.file('generated/webIcoRes/static/favicon.png')
+    
+    inputs.files(svgFundoProv, svgFrenteProv)
+    outputs.file pngArqProv
+    
+    doLast {
+        File svgFundo = svgFundoProv.get().asFile
+        File svgFrente = svgFrenteProv.get().asFile
+        File pngArq = pngArqProv.get().asFile
+        if (!svgFundo.exists()) throw new GradleException('Faltou o SVG de Fundo!')
+        if (!svgFrente.exists()) throw new GradleException('Faltou o SVG de Frente!')
+        
+        File pastaBuild = pngArq.parentFile
+        if (!pastaBuild.exists()) pastaBuild.mkdirs()
+        
+        String msysDir = winDiscProv.get() 
+        String magickCmd = eWindowsProv.get() ? "${msysDir}:/msys64/ucrt64/bin/magick.exe" : 'magick'
+        
+        List<String> mesclaSVG = [
+            magickCmd,
+            '-background', 'none',
+            svgFundo.absolutePath, 
+            svgFrente.absolutePath, 
+            '-gravity', 'center', 
+            '-composite', 
+            '-resize', '2048x2048', 
+            pngArq.absolutePath 
+        ]
+        
+        Process processo = mesclaSVG.execute()
+        processo.waitFor()
+        if (processo.exitValue() != 0) {
+            throw new GradleException('Falha ao gerar o ícone da Web')
+        }
+    }
+}

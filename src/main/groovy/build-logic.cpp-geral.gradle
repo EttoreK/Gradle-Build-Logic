@@ -1,0 +1,15 @@
+// Configuração das ferramentas de compilação. Garante o uso do compilador correto
+toolChains {
+    // Diz para o Gradle procurar especificamente pelo Gcc
+    if (System.getProperty('os.name').toLowerCase().contains('windows')) {
+        String msysDir = "${gradle.ext.propsLocal.getProperty('unidade.win', 'C')}:/msys64"
+
+        visualCpp(VisualCpp)
+
+        mingwX86(Gcc) { path "${msysDir}/mingw32/bin" }
+
+        ucrtX64(Gcc) { path "${msysDir}/ucrt64/bin" }
+    }
+
+    gcc(Gcc) // generalizado, funciona para windows e linux 64 32
+}

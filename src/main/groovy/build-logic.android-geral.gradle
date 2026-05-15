@@ -1,0 +1,97 @@
+// Declaração dos plugins do fulcro
+// plugins {}
+// Atalhos para libs.versions.toml para facilitar a leitura
+Object ver = libs.versions
+Object val = ver.valores
+Provider<String> espNomeProv = providers.gradleProperty('espolioDir').orElse('espolio')
+Provider<Directory> espolioDirProv = project.rootProject.layout.projectDirectory.dir(espNomeProv)
+// Definição das características do aplicativo
+android {
+    // Configurações padrão para o aplicativo Android
+    defaultConfig {
+        compileSdk = ver.sdkCompile.get().toInteger() // compatibilidade APIs do Android
+        minSdk = ver.sdkMin.get().toInteger() // versão Android mínima
+        targetSdk = ver.sdkTarget.get().toInteger() // versão Android principal
+        // multiDexEnabled = true // habilita suporte a recursos novos em Androids antigos
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+    }
+    // Versão java para compilar o código e manter a compatibilidade
+    compileOptions {
+        sourceCompatibility = JavaVersion.toVersion(ver.javaSource.get())
+        targetCompatibility = JavaVersion.toVersion(ver.javaTarget.get())
+    }
+    // Configurações do lint
+    lint {
+        baseline = file("lint-baseline.xml")
+        // Habilita verificações desativadas por padrão
+        enable += [
+            'WrongThread', 
+            'WrongThreadInterprocedural', 
+            'StopShip', 
+            'LogConditional', 
+            'ConvertToWebp', 
+            'UnknownNullness'
+        ]
+        
+        warningsAsErrors = true // build falhe caso uma dessas regras seja quebrada
+        checkDependencies = false // mantém o build rápido
+    }
+    // Define o local do código para o android
+    sourceSets {
+        // Código principal, androidx usa res, mas o gradle cria resources
+        main {
+            res.srcDirs = [val.android.recursosMain] // recursos .xml do código
+            assets.srcDirs += [espolioDirProv] // recursos gerais
+        }
+        // Códigos de teste
+        test { 
+            res.srcDirs = [val.android.recursosTest] // recursos .xml dos códigos de teste
+            assets.srcDirs += [espolioDirProv] // recursos gerais
+        }
+    }
+    // Configuração para usar Junit
+    testOptions {
+        unitTests{ 
+            all {
+                // Resolve warnings do Java 21+ e Mockito
+                jvmArgs(
+                    '-Xshare:off', // desliga o cache compartilhado 
+                    '-XX:+EnableDynamicAgentLoading' // adiciona o Mockito como agente de build
+                )
+                // Melhora a saída do log no terminal
+                testLogging {
+                    events = ['passed', 'skipped', 'failed'] // eventos que devem gerar mesagens
+                    exceptionFormat = 'full' // mostra o stacktrace completo do erro
+                    showStandardStreams = true // redireciona tuda saída de código para o terminal
+                }
+
+                useJUnitPlatform() // habilita JUnit 5
+            }
+            
+            returnDefaultValues = true // não quebrar ao acessar classes do SDK
+        }
+    }
+}
+// Definição das características da Compilação
+java {
+    // Garante qeu o java que compila seja o definido
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(ver.javaSource.get().toInteger())
+    }
+}
+
+tasks.withType(Test).configureEach {
+    outputs.upToDateWhen { false }
+
+    testLogging {
+        // Mostra no terminal os testes que passaram, foram pulados ou falharam
+        events 'passed', 'skipped', 'failed'
+        showStandardStreams = false // saída padrão do console
+        // Se der erro, mostra o rastro completo do problema
+        exceptionFormat = 'full'
+        showCauses = true
+        showStackTraces = true
+    }
+}
+// Biblioteras para serem usadas no código
+// dependencies {}

@@ -1,0 +1,30 @@
+// Busca um arquivo que possua a propriedade buildlogicNome para definir como propRaiz
+final Properties propRaiz = new Properties()
+FileInputStream fileInputStream = null
+settingsDir.parentFile.listFiles().any { final file ->
+    if (file.isFile() && file.canRead()) {
+        fileInputStream = new FileInputStream(file)
+        propRaiz.load(fileInputStream)
+        if (propRaiz.buildlogicNome != null) { return true } 
+        else { propRaiz.clear() }
+    }
+}
+fileInputStream.close();
+// Resolução de dependências
+dependencyResolutionManagement {
+    // Aonde buscar para cumprir as dependências
+    repositories {
+        google() // repositório oficial do google
+        mavenCentral() // dependências de java e android
+        gradlePluginPortal() // dependências especificas do gradle
+    }
+    // Acesso ao libs.versions.toml
+    versionCatalogs {
+        // Busca e define o libs.versions.toml como libs e usa como catálogo de versão
+        create(propRaiz.libsNome) {
+            from(files(propRaiz.libsDir))
+        }
+    }
+}
+
+rootProject.name = propRaiz.buildlogicNome // nome da pasta do projeto

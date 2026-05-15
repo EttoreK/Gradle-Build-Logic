@@ -1,0 +1,94 @@
+// Define o diretório de build usando o nome dinâmico da pasta
+Provider<String> appNomeProv = providers.gradleProperty('projNome')
+Provider<String> espNomeProv = providers.gradleProperty('espolioDir').orElse('espolio')
+Provider<String> saidaDirProv = libs.versions.valores.buildDir.web
+Directory projDir = project.rootProject.layout.projectDirectory
+project.layout.buildDirectory.set(projDir.dir(saidaDirProv))
+// Configurações do Spring e exclusão de bibliotecas padrão
+project.configurations {
+    // Remove o todas as dependências de uma vez
+    all {
+        // exclude group: 'org.springframework.boot', module: 'spring-boot-starter-logging'
+        exclude group: 'org.hibernate.validator', module: 'hibernate-validator'
+        exclude group: 'org.yaml', module: 'snakeyaml'
+        exclude group: 'org.apache.tomcat.embed', module: 'tomcat-embed-websocket'
+        exclude group: 'org.springframework.boot', module: 'spring-boot-starter-jackson'
+        exclude group: 'com.fasterxml.jackson.core'
+        exclude group: 'tools.jackson.core'
+        exclude group: 'org.springframework.boot', module: 'spring-boot-jarmode-tools'
+        exclude group: 'org.apache.tomcat.embed', module: 'tomcat-embed-el'
+        exclude group: 'jakarta.xml.bind', module: 'jakarta.xml.bind-api'
+        exclude group: 'org.glassfish.jaxb', module: 'jaxb-runtime'
+        exclude group: 'com.vaadin.external.google', module: 'android-json'
+    }
+}
+// Configuração das fontes de recursos, bibliotecas e arquivos
+project.sourceSets {
+    main {
+        resources {
+            srcDirs += ['src/main/resources'] // mantém os recursos padrões
+            srcDirs += [projDir.dir(espNomeProv)] // inclui o conteúdo da pasta espolio no Classpath
+        }
+    }
+}
+// Manipulação do arquivo .classpath para o VSCODE parar de reclamar
+project.tasks.register('posBuildWeb') {
+    group = 'webActions'
+    description = 'Sobrescreve o .classpath do VS Code incluindo dependências do projeto Web'
+    // Roda logo após a compilação do Java
+    mustRunAfter tasks.named('classes')
+    // Pega as dependências de compilação do Java (substitui o debugCompileClasspath do Android)
+    org.gradle.api.file.FileCollection compDep = project.configurations.compileClasspath
+    File classpathArq = project.file('.classpath')
+
+    doLast {
+        if (classpathArq.exists() && classpathArq.canWrite()) {
+            String xmlArq = classpathArq.text
+            StringBuilder novasBib = new StringBuilder()
+            
+            List<String> linhasLimpas = []
+            xmlArq.eachLine { linha ->
+                if (linha.contains('kind="lib"')) {
+                    def matcher = linha =~ /path="([^"]+)"/
+                    if (matcher.find()) {
+                        File arquivoNoDisco = new File(matcher.group(1))
+                        if (arquivoNoDisco.exists()) {
+                            linhasLimpas << linha
+                        }
+                    } else {
+                        linhasLimpas << linha
+                    }
+                } else {
+                    linhasLimpas << linha
+                }
+            }
+            xmlArq = linhasLimpas.join('\n')
+
+            compDep.files.each { File arquivo ->
+                String caminho = arquivo.absolutePath.replace(File.separator, '/')
+                boolean eJar = caminho.endsWith('.jar')
+                boolean jaExiste = xmlArq.contains("path=\"${caminho}\"")
+                
+                if (eJar && !jaExiste) {
+                    novasBib.append("    <classpathentry kind=\"lib\" path=\"${caminho}\"/>\n")
+                }
+            }
+
+            if (novasBib.length() > 0 || xmlArq != classpathArq.text) {
+                if (novasBib.length() > 0) {
+                    xmlArq = xmlArq.replace('</classpath>', novasBib.toString() + '</classpath>')
+                }
+                classpathArq.text = xmlArq
+                println ".classpath de ${appNomeProv.get()} (Web) atualizado via posBuildWeb."
+            }
+        }
+    }
+}
+// Exclui duplicatas
+tasks.named('processResources') {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+// Garanta que a tarefa de JAR também ignore duplicatas
+tasks.withType(Jar).configureEach {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
