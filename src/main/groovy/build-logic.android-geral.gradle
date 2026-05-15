@@ -22,7 +22,7 @@ android {
     }
     // Configurações do lint
     lint {
-        baseline = file("lint-baseline.xml")
+        baseline = file('lint-baseline.xml')
         // Habilita verificações desativadas por padrão
         enable += [
             'WrongThread', 
