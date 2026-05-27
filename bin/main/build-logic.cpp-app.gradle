@@ -1,0 +1,24 @@
+// Declaração dos plugins da app
+// plugins {}
+plugins.apply(libs.plugins.buildLogicCppGeral.get().getPluginId()) // configurações do android
+plugins.apply(libs.plugins.buildLogicCppActions.get().getPluginId()) // ações de build
+// Define o diretório de build
+Provider<String> projNomeProv = providers.gradleProperty('projNome')
+Provider<String> saidaDirProv = libs.versions.valores.buildDir.cpp
+Directory projDir = project.rootProject.layout.projectDirectory
+project.layout.buildDirectory.set(projDir.dir(saidaDirProv))
+// Configurações da aplicação
+application {
+    baseName.set(projNomeProv.get()) // nome do produto gerado
+    // Máquinas que o Gradle vai se dispor a criar aplicativos
+    targetMachines = [
+        machines.linux.x86, machines.linux.x86_64, // linux
+        machines.windows.x86, machines.windows.x86_64 // windows
+    ]
+}
+// Configuração dos Testes
+unitTest {
+    baseName.set(projNomeProv.map { it + 'Test' }) // nome do produto de tests gerado
+}
+// Biblioteras para serem usadas no código
+// dependencies {}

@@ -1,0 +1,49 @@
+// Define o diretório de build
+Provider<String> projNomeProv = providers.gradleProperty('projNome')
+Provider<String> saidaDirProv = libs.versions.valores.buildDir.java
+Directory projDir = project.rootProject.layout.projectDirectory
+project.layout.buildDirectory.set( saidaDirProv.map { dir -> projDir.dir(dir).dir(project.name) } )
+// Manipulação do arquivo .classpath para o VSCODE parar de reclamar
+project.afterEvaluate {
+    File classpathArq = project.file('.classpath')
+    // Só tenta editar se o arquivo já existir (criado pelo VS Code)
+    if (classpathArq.exists() && classpathArq.canWrite()) {
+        String xmlArq = classpathArq.text
+        StringBuilder novasEntradas = new StringBuilder()
+        org.gradle.api.artifacts.Configuration bibTest = project.configurations.findByName(
+            'testRuntimeClasspath'
+        )
+        boolean houveAlteracao = false
+        // Verifica se a pasta src/test/java já está registrada
+        if (!xmlArq.contains("path=\"src/test/java\"")) {
+            novasEntradas.append(
+                "    <classpathentry kind=\"src\" output=\"bin/main\" " +
+                "path=\"src/test/java\">\n" +
+                "        <attributes>\n" +
+                "            <attribute name=\"gradle_scope\" value=\"test\"/>\n" +
+                "            <attribute name=\"gradle_used_by_scope\" value=\"test\"/>\n" +
+                "            <attribute name=\"test\" value=\"true\"/>\n" +
+                "        </attributes>\n" +
+                "    </classpathentry>\n"
+            )
+            houveAlteracao = true
+        }
+        // Insere as biblioteas de teste
+        if (bibTest != null) {
+            bibTest.files.each { File arquivo ->
+                String caminho = arquivo.absolutePath.replace(File.separator, '/')
+                // Só arquivos .jar que não existe pra não duplicar, caminhos relativos ou absolutos
+                if (caminho.endsWith('.jar') && !xmlArq.contains("path=\"${caminho}\"")) {
+                    novasEntradas.append("    <classpathentry kind=\"lib\" path=\"${caminho}\"/>\n")
+                    houveAlteracao = true
+                }
+            }
+        }
+        // Gravação do arquivo, insere as novas entradas antes do fechamento da tag </classpath>
+        if (houveAlteracao) {
+            xmlArq = xmlArq.replace('</classpath>', novasEntradas.toString() + '</classpath>')
+            classpathArq.write(xmlArq)
+            println "VSCode .classpath de ${projNome} (Bib) atualizado com sucesso."
+        }
+    }
+}

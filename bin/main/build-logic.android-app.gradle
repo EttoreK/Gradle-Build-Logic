@@ -1,0 +1,92 @@
+// Declaração dos plugins da app
+// plugins {}
+plugins.apply(libs.plugins.buildLogicAndroidGeral.get().getPluginId()) // configurações do android
+plugins.apply(libs.plugins.buildLogicAndroidActions.get().getPluginId()) // ações de build
+// Atalhos para libs.versions.toml para facilitar a leitura
+Object val = libs.versions.valores
+// Define o diretório de build
+Provider<String> appIdProv = providers.gradleProperty('appIdPacote')
+Provider<String> projNomeProv = providers.gradleProperty('projNome')
+Provider<String> appVerNumProv = providers.gradleProperty('appVerNum')
+Provider<String> appVerNomeProv = providers.gradleProperty('appVerNome')
+Provider<String> saidaDirProv = val.buildDir.android
+Directory projDir = project.rootProject.layout.projectDirectory
+project.layout.buildDirectory.set(projDir.dir(saidaDirProv))
+// Definição das características do aplicativo
+android {
+    // Configurações padrão para o aplicativo Android
+    defaultConfig {
+        applicationId "${appIdProv.get()}.${projNomeProv.get().toLowerCase()}" // id na Play Store
+        versionCode appVerNumProv.get().toInteger() // versão do para Google Play Store
+        versionName appVerNomeProv.get() // nome da versão do código exibido aos usuários
+    }
+
+    bundle {
+        abi {
+            enableSplit = true // gera pacotes menores específicos para cada processador
+        }
+    }
+    // Controle sobre compilaação
+    buildFeatures{
+        buildConfig = false
+        viewBinding = true
+    }
+    // Controle de builds para o aplicativo
+    buildTypes {
+        // Regras para a release do aplicativo
+        release {
+            minifyEnabled = true
+            shrinkResources = true
+            signingConfig = signingConfigs.debug
+            proguardFiles getDefaultProguardFile(
+                val.android.proguardAndroid.get()), val.android.proguardRules.get()
+        }
+        // Regras para a debug do aplicativo
+        debug {
+            minifyEnabled = false // encolhimento de código
+            shrinkResources = false
+        }
+    }
+    // Controle de assinatura para distribuição
+    signingConfigs {
+        debug {
+            // Usa as credenciais padrão do SDK
+            storeFile = file(System.getProperty('user.home') + '/.android/debug.keystore')
+            storePassword = 'android'
+            keyAlias = 'androiddebugkey'
+            keyPassword = 'android'
+        }
+    }
+    // Ativa a view binding para melhorar as views do aplicativo
+    viewBinding {
+        enable = true
+    }
+}
+// Configuração para o nome do apk
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        variant.outputs.forEach { output ->
+            // Só calcula isso no exato milissegundo em que for gerar o APK
+            output.outputFileName.set(
+                output.versionCode.map { vCode ->
+                    "${projNomeProv.get()}-${vCode}-${variant.name}.apk"
+                }
+            )
+        }
+    }
+}
+// Biblioteras para serem usadas no código
+dependencies {
+    androidTestImplementation libs.xprssCore // framework do Andoird para testes
+    implementation libs.consLt // layouts complexos
+    implementation libs.material // experiência visual
+    implementation libs.adrxActivity // base para fazer Activities
+    implementation libs.adrxAppcompat // compatibilidade com versões antigas
+    implementation libs.adrxAnnotation // necessário para usar @NonNull, @Nullable
+    implementation libs.lifeCycle // necessário pro classpath
+    testImplementation libs.junitAPI // api dp Junit 5
+    testImplementation libs.mockitoCore // para usar o mockito
+    testImplementation libs.mockitoJunit // para mockar métodos estáticos
+    testRuntimeOnly libs.junitEngine // engine do Junit 5
+    testRuntimeOnly libs.junitPlt // talvez redundante, plataforma do junit 5
+}

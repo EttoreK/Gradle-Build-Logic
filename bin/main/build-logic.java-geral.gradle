@@ -1,0 +1,26 @@
+// plugins {}
+// Provedores para acesso lazy às variáveis
+Object ver = libs.versions
+// Configurações Java para compilaçõa
+java {
+    // Versão java para compilar o código e manter a compatibilidade
+    sourceCompatibility = JavaVersion.toVersion(ver.javaSource.get())
+    targetCompatibility = JavaVersion.toVersion(ver.javaTarget.get())
+    // Garante qeu o java que compila seja o definido
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(ver.javaSource.get().toInteger())
+    }
+}
+// Biblioteras para serem usadas no código
+dependencies {
+    compileOnly libs.jetBsAnnot // biblioteca padrão para @Nullable e @NonNull
+    testImplementation libs.junitAPI // api dp Junit 5
+    testImplementation libs.mockitoCore // para usar o mockito
+    testImplementation libs.mockitoJunit // para mockar métodos estáticos
+    testRuntimeOnly libs.junitEngine // engine do Junit 5
+    testRuntimeOnly libs.junitPlt // talvez redundante, plataforma do junit 5
+}
+// Aplica o tipo de teste como JUnit
+test {
+    useJUnitPlatform()
+}
