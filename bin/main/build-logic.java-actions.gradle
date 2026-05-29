@@ -11,6 +11,9 @@ Provider<Directory> deployDirProv = buildDir.dir('distributions')
 Provider<String> nomeAppProv = providers.gradleProperty('projNome')
 Provider<String> espNomeProv = providers.gradleProperty('espolioDir').orElse('espolio')
 Provider<String> verNumProv = providers.gradleProperty('appVerNum')
+Provider<String> srvDonoProv = project.providers.provider { propsLocal.getProperty('srv.dono') }
+Provider<String> srvSedeProv = project.providers.provider { propsLocal.getProperty('srv.sede') }
+Provider<String> srvDirProv = project.providers.provider { propsLocal.getProperty('srv.dir') }
 Provider<String> winDiscProv = project.providers.provider {
     propsLocal.getProperty('unidade.win', 'C')
 }
@@ -257,6 +260,109 @@ tasks.register('webIco') {
         processo.waitFor()
         if (processo.exitValue() != 0) {
             throw new GradleException('Falha ao gerar o ícone da Web')
+        }
+    }
+}
+// Evia a nova versão para o servidor
+tasks.register('submitWeb') {
+    group = 'deploy actions'
+    description = 'Compila o app Web e envia o artefato magro (Thin JAR) para o servidor remoto'
+    jarMagro = true
+    inputs.files(tasks.named('orderJar')) // usa os jar magros para ser mais rápido
+    inputs.files(tasks.named('orderLibs'))
+
+    doLast {
+        String dono = srvDonoProv.get()
+        String sede = srvSedeProv.get()
+        String dir = srvDirProv.get()
+
+        if (!dono || !sede || !dir) {
+            throw new GradleException('Faltam variáveis do servidor no local.properties!')
+        }
+
+        File dirBaseLocal = deployDirProv.get().asFile
+        if (!dirBaseLocal.exists()) {
+            throw new GradleException("A pasta base de compilação (${dirBaseLocal}) não existe!")
+        }
+
+        String comandoFind = "cd ${dir} 2>/dev/null && find . -type f -exec md5sum {} + || true"
+        Map<String, String> hashes = [:]
+        ByteArrayOutputStream saida = new ByteArrayOutputStream()
+        ByteArrayOutputStream erro = new ByteArrayOutputStream()
+        
+        Process procHash = [
+            'ssh', '-o', 'StrictHostKeyChecking=no', "${dono}@${sede}", comandoFind
+        ].execute()
+        procHash.waitForProcessOutput(saida, erro)
+        
+        if (procHash.exitValue() != 0) {
+            throw new GradleException('' +
+                'Falha de conexão com o servidor ao ler os Hashes! \n' +
+                "Detalhes: ${stderr.toString().trim()}"
+            )
+        }
+
+        saida.toString().eachLine { linha ->
+            linha = linha.trim()
+            if (linha && linha.contains('  ')) {
+                def partes = linha.split('  ')
+                if (partes.size() >= 2) {
+                    String hash = partes[0].trim()
+                    // Remove o './' que o comando 'find' do Linux coloca no começo do caminho
+                    String caminhoRelativo = partes[1].trim().replaceFirst("^\\./", "")
+                    hashes[caminhoRelativo] = hash
+                }
+            }
+        }
+
+        String erroHash = erro.toString().trim()
+        if (erroHash && !erroHash.contains('Warning')) {
+            println "⚠️ Aviso SSH (Hash): ${erroHash}"
+        }
+        // Compara os arquivos
+        List<Map> arqsUpload = []
+        dirBaseLocal.eachFileRecurse(groovy.io.FileType.FILES) { arquivo ->
+            // Pega o caminho relativo do arquivo em relação à pasta "libs" e converte para padrão Linux '/'
+            String caminhoRel = dirBaseLocal.toPath().relativize(arquivo.toPath()).toString().replace(File.separator, '/')
+            // Calcula o Hash MD5 local (lendo em blocos para não estourar a memória RAM)
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance('MD5')
+            arquivo.eachByte(8192) { buffer, len -> 
+                md.update(buffer, 0, len) 
+            }
+            String hashLocal = md.digest().encodeHex().toString()
+            // Se o hash remoto for diferente do local ou o arquivo não existir, vai para o upload
+            if (hashes[caminhoRel] != hashLocal) {
+                arqsUpload << [file: arquivo, path: caminhoRel]
+            }
+        }
+        // Sobe os arquivos
+        println "Estado: ${hashes.size()} arquivos no servidor."
+        
+        if (arqsUpload.isEmpty()) {
+            println "Nenhum arquivo foi modificado. Servidor já está 100% atualizado!"
+        } else {
+            println "Foram detectadas ${arqsUpload.size()} alterações. Iniciando transferências..."
+            // Garante que a pasta base existe no servidor
+            Process procMkdir = [
+                'ssh', '-o', 'StrictHostKeyChecking=no', "${dono}@${sede}", "mkdir -p ${dir}/lib"
+            ].execute()
+            procMkdir.waitForProcessOutput(System.out, System.err)
+            // Faz o SCP pra cada arquivo
+            arqsUpload.each { item ->
+                println "   -> Enviando: ${item.path} (${item.file.length() / 1024} KB)"
+
+                Process procScp = [
+                    'scp', '-o', 'StrictHostKeyChecking=no', 
+                    item.file.absolutePath, 
+                    "${dono}@${sede}:${dir}/${item.path}"
+                ].execute()
+                // Imprime a saída padrão/erro do SCP direto no terminal do Gradle
+                procScp.waitForProcessOutput(System.out, System.err)
+                
+                if (procScp.exitValue() != 0) {
+                    throw new GradleException("❌ Falha fatal ao transferir: ${item.path}")
+                }
+            }
         }
     }
 }
