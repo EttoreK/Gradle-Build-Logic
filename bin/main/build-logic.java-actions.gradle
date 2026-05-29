@@ -317,7 +317,7 @@ tasks.register('submitWeb') {
 
         String erroHash = erro.toString().trim()
         if (erroHash && !erroHash.contains('Warning')) {
-            println "⚠️ Aviso SSH (Hash): ${erroHash}"
+            println "Aviso SSH (Hash): ${erroHash}"
         }
         // Compara os arquivos
         List<Map> arqsUpload = []
