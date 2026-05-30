@@ -1,3 +1,4 @@
+// Declaração dos plugins
 // plugins {}
 plugins.apply(libs.plugins.buildLogicXcodeGeral.get().getPluginId())
 // application {} // Define configurações do swift-application (incompativel com gradle 9 [11/2025])
@@ -12,35 +13,35 @@ Provider<String> vmXcodeDirProv = x.vmDirProv.zip(x.buildXDirProv) { dir, bDir -
 Provider<Directory> xcDirProv = project.providers.provider { 
     project.rootProject.layout.projectDirectory.dir(x.buildXDirProv.get()) 
 }
-String cacheSimulador // cache manual para pegaSimulador
 // Busca um simulador de iOS disponível para testes e armazena em cache
+String cacheSimulador // cache manual para pegaSimulador
 Closure<String> pegaSimulador = {
     if (cacheSimulador) { return cacheSimulador } // Retorna o valor em cache se exisitr
     String simuladorUsualProv = x.simuladorUsualProv.get()
     String saida = ''
     // Executa o comando para listar os dispositivos simulados em JSON
-    try { // O try/catch age como ignoreExitValue, se o comando falhar a saida continuará vazia
+    try { // O try/catch age como ignoreExitValue, se o comando falhar a saida continua vazia
         ByteArrayOutputStream stdout = new ByteArrayOutputStream()
-        ByteArrayOutputStream stderr = new ByteArrayOutputStream() // capturar o erro
+        ByteArrayOutputStream stderr = new ByteArrayOutputStream() // captura o erro
         Process processo = x.comandoRemoto(['xcrun', 'simctl list -j devices']).execute()
         processo.waitForProcessOutput(stdout, stderr) // pega a saída e espera o comando terminar
         String erro = stderr.toString().trim()
         saida = stdout.toString().trim()
 
-        if (!erro.isEmpty()) { println "AVISO (stderr): Erro ao listar simuladores: ${erro}" }
+        if (!erro.isEmpty()) { println ">> ERRO: falha ao listar simuladores. ${erro}" }
     } catch (Exception e) { 
-        println "ERRO: ao executar. Usando '${simuladorUsualProv}'. ${e.message}" 
+        println ">> AVISO: falha ao executar. Usando '${simuladorUsualProv}'. ${e.message}" 
     }
     // Verifica se o comando produziu alguma saída
     if (saida.isBlank()) {
-        println "AVISO: O comando 'xcrun simctl list' não retornou. Usando '${simuladorUsualProv}'."
+        println ">> AVISO: falha ao pegar simulador instalado. Usando '${simuladorUsualProv}'."
         return (cacheSimulador = simuladorUsualProv)
     }
     // Pega todos os dispositivos de todos os runtimes em uma única lista
     try {
         Map<String, Object> jsonSaida = new groovy.json.JsonSlurper().parseText(saida)
         List<Map<String, Object>> aparelhos = jsonSaida.devices.values().flatten()
-        // PRIORIDADE 1: Encontrar qualquer simulador que já esteja ativo ("Booted")
+        // PRIORIDADE 1: Encontrar qualquer simulador que já esteja ativo ('Booted')
         Map<String, Object> aparelhoAtivo = aparelhos.find { it.state == 'Booted' }
         if (aparelhoAtivo) { return (cacheSimulador = aparelhoAtivo.name) }
         // PRIORIDADE 2: Se nenhum estiver ativo, encontrar o primeiro iPhone ou iPad disponível
@@ -49,7 +50,7 @@ Closure<String> pegaSimulador = {
         }
         if (aparelhoPreparado) { return (cacheSimulador = aparelhoPreparado.name) }
     } catch (Exception e) { 
-        println "ERRO: de leitura. Usando '${simuladorUsualProv}'. ${e.message}" 
+        println ">> AVISO: falha de leitura. Usando '${simuladorUsualProv}'. ${e.message}" 
     }
     return (cacheSimulador = simuladorUsualProv)
 }
@@ -71,11 +72,11 @@ tasks.register('syncToMac') { // caso necessário use "--rerun" para forçar a r
     description = 'Garante que o diretório existe, sincroniza os arquivos e ajusta as permissões.'
     group = 'MacOs Controller'
     onlyIf { !x.eMacProv.get() } // executa apenas se não for MacOS local
-    inputs.files(fileTree(x.projDir) {
+    inputs.files(x.projDirProv.map { dir -> dir.asFileTree.matching {
         exclude 'build/**'
         exclude '.gradle/**'
-        exclude 'build.gradle' // Exclui o build.gradle dentro de x.projDir, se existir
-    })
+        exclude 'build.gradle' // exclui o build.gradle dentro de x.projDirProv, se existir
+    }})
     outputs.upToDateWhen { true } // só sincroniza 1 vez, neessário para não apagar as builds
     // Executa o comando de limpeza e criação diretamente via SSH
     doFirst {
@@ -96,7 +97,7 @@ tasks.register('syncToMac') { // caso necessário use "--rerun" para forçar a r
         String vmAppDir = x.vmAppDirProv.get()
         String vmResDir = "${vmAppDir}/src/main/resources"
         
-        x.projDir.asFile.eachFile { item ->
+        x.projDirProv.get().asFile.eachFile { item ->
             if (item.name in ['.gradle', 'build', 'build.gradle']) { return }
             
             List<String> comandoCopia = [
@@ -124,7 +125,9 @@ tasks.register('syncToMac') { // caso necessário use "--rerun" para forçar a r
         if (dirGerado.exists()) {
             String vmBuildXCodeDir = "${vmAppDir}/${x.buildXDirProv.get()}"
             // Garante que a pasta build/xcode exista na VM antes de copiar
-            x.comandoRemoto(['mkdir', '-p', "\'${vmBuildXCodeDir}\'"]).execute().waitFor()
+            x.comandoRemoto(
+                ['mkdir', '-p', "\'${vmBuildXCodeDir}\'"]
+            ).execute().waitForProcessOutput(System.out, System.err)
             
             List<String> comandoCopiaGen = [
                 'scp', '-r', '-p', dirGerado.absolutePath, "${vmEntrada}:${vmBuildXCodeDir}/"
@@ -149,7 +152,7 @@ tasks.register('syncToMac') { // caso necessário use "--rerun" para forçar a r
 tasks.register('cleanMac', Exec) {
     description = 'Limpa os arquivos de build do Xcode para iOS.'
     group = 'MacOs Controller'
-    workingDir = x.projDir
+    workingDir(x.projDirProv)
     outputs.upToDateWhen { false } // sempre executa 
 
     doFirst {
@@ -186,7 +189,7 @@ tasks.register('cleanMac', Exec) {
 Closure<Void> xbuild = { Task tarefa, String platforma, String sdk, String config ->
     tarefa.description = "Compila o projeto Xcode para ${platforma.toUpperCase()} (${config})"
     tarefa.group = 'Xcode Actions'
-    tarefa.inputs.dir x.srcDir
+    tarefa.inputs.dir x.srcDirProv
     tarefa.inputs.dir x.xcodeProjProv
     tarefa.inputs.files(tasks.named('syncToMac')) // garante sync antes do build, se remoto
     tarefa.outputs.dir({ -> x.eMacProv.get() ? pegaArquivos("${config}-${sdk}") : null}).optional()
@@ -291,16 +294,16 @@ tasks.register('testIosUi', Exec) { xtest(it, 'ios', 'iphonesimulator', x.xcUITe
 Closure<Void> xarchive = { Task tarefa, String platforma, String sdk ->
     tarefa.description = "Cria um arquivo .xcarchive para ${platforma.toUpperCase()} (Release)"
     tarefa.group = 'Xcode Actions'
-    tarefa.inputs.dir x.srcDir
+    tarefa.inputs.dir x.srcDirProv
     tarefa.inputs.dir x.xcodeProjProv
     tarefa.inputs.files(tasks.named('syncToMac'))
     tarefa.outputs.file(providers.provider { 
         pegaArchiveDir(platforma) }.map { project.rootProject.layout.projectDirectory.file(it) 
     })
-    // O Archive usa uma configuração específica, geralmente Release
+    // O Archive usa uma configuração específica de Release
     tarefa.doFirst {
         String idTimeProv = x.idTimeProv.get()
-        List<String> comando = [ // Comando de Archive
+        List<String> comando = [
             'xcrun', 'xcodebuild', 'archive',
             '-project', x.xcodeProjProv.get(),
             '-scheme', "${x.nomeAppProv.get()}-${(platforma == 'ios' ? 'iOS' : 'macOS')}",
@@ -308,7 +311,7 @@ Closure<Void> xarchive = { Task tarefa, String platforma, String sdk ->
             '-archivePath', pegaArchiveDir(platforma),
             'BUILD_LIBRARY_FOR_DISTRIBUTION=YES'
         ]
-        // Configuração de destino (apenas iOS precisa de destino explícito)
+        // Configuração de destino, iOS precisa de destino explícito
         if (platforma == 'ios') { comando.addAll([ '-destination', 'generic/platform=iOS' ]) }
         else { comando.addAll([ '-destination', 'platform=macOS' ]) }
         // Configuração de credenciais
@@ -324,18 +327,14 @@ Closure<Void> xarchive = { Task tarefa, String platforma, String sdk ->
         tarefa.commandLine = x.comandoRemoto(comando)
     }
 }
-// Registro das tasks:
+// Registro das tarefas de arquivamento para cada plataforma
 tasks.register('archiveMacos', Exec) { xarchive(it, 'macos', 'macosx') }
 tasks.register('archiveIos', Exec) { xarchive(it, 'ios', 'iphoneos') }
 // Valida e assina o aplicativo, (não funciona, não tenho nenhuma chave de desenvolvedor válida)
 Closure<Void> xexport = { Task tarefa, String platforma ->
-    // String derivedDataDir = pegaDir('derived-data', platforma)
-    // String exportDir = "${derivedDataDir}/Exported-Poducts"
-    // String exportExt = (platforma == 'ios') ? 'ipa' : 'pkg'
-
     tarefa.description = 'Exporta o apliativo.xcarchive para AppStore'
     tarefa.group = 'Xcode Actions'
-    tarefa.inputs.files(tasks.named("archive${platforma.capitalize()}")) // Dependência implicita
+    tarefa.inputs.files(tasks.named("archive${platforma.capitalize()}")) // dependência implicita
     tarefa.outputs.file(providers.provider { 
         String derivedDataDir = pegaDir('derived-data', platforma)
         String exportExt = (platforma == 'ios') ? 'ipa' : 'pkg'
@@ -344,7 +343,7 @@ Closure<Void> xexport = { Task tarefa, String platforma ->
 
     tarefa.doFirst {
         String plistDir = "${x.xcodeProjProv.get()}/exportOptions.plist"
-        String localPlistDir = new File(x.projDir.asFile, plistDir).absolutePath
+        String localPlistDir = new File(x.projDirProv.get().asFile, plistDir).absolutePath
         // Comando de Exportação requer um .plist, criado em xcode-project
         tarefa.commandLine = x.comandoRemoto([
             'xcrun', 'xcodebuild', '-exportArchive',
@@ -377,3 +376,5 @@ Closure<Void> xsubmit = { Task tarefa, String platforma ->
 // Registra as tarefas de submissão para cada plataforma
 tasks.register('submitIos', Exec) { xsubmit(it, 'ios') }
 tasks.register('submitMacos', Exec) { xsubmit(it, 'macos') }
+// Biblioteras para serem usadas no código
+// dependencies {}

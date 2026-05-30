@@ -1,9 +1,10 @@
+// Declaração dos plugins
+// plugins {}
 // Define o diretório de build usando o nome dinâmico da pasta
 Provider<String> appNomeProv = providers.gradleProperty('projNome')
 Provider<String> espNomeProv = providers.gradleProperty('espolioDir').orElse('espolio')
 Provider<String> saidaDirProv = libs.versions.valores.buildDir.web
-Directory projDir = project.rootProject.layout.projectDirectory
-project.layout.buildDirectory.set(projDir.dir(saidaDirProv))
+project.layout.buildDirectory.set(project.rootProject.layout.projectDirectory.dir(saidaDirProv))
 // Configurações do Spring e exclusão de bibliotecas padrão
 project.configurations {
     // Remove o todas as dependências de uma vez
@@ -27,7 +28,8 @@ project.sourceSets {
     main {
         resources {
             srcDirs += ['src/main/resources'] // mantém os recursos padrões
-            srcDirs += [projDir.dir(espNomeProv)] // inclui o conteúdo da pasta espolio no Classpath
+            // inclui o conteúdo da pasta espolio no Classpath
+            srcDirs += [project.rootProject.layout.projectDirectory.dir(espNomeProv)]
         }
     }
 }
@@ -36,11 +38,20 @@ project.tasks.register('posBuildWeb') {
     group = 'webActions'
     description = 'Sobrescreve o .classpath do VS Code incluindo dependências do projeto Web'
     mustRunAfter tasks.named('classes') // roda logo após a compilação do Java
-    // Pega as dependências de compilação do Java (substitui o debugCompileClasspath do Android)
-    org.gradle.api.file.FileCollection compDep = project.configurations.compileClasspath
-    File classpathArq = project.file('.classpath')
+    // Pega as dependências de compilação do Java
+    Provider<Set<FileSystemLocation>> compDepProv = configurations.named(
+        'compileClasspath'
+    ).flatMap { it.elements }
+    Provider<RegularFile> classpathArqProv = project.providers.provider { 
+        layout.projectDirectory.file('.classpath') 
+    }
+
+    inputs.files(compDepProv)
+    inputs.file(classpathArqProv).optional()
 
     doLast {
+        File classpathArq = classpathArqProv.get().asFile
+
         if (classpathArq.exists() && classpathArq.canWrite()) {
             String xmlArq = classpathArq.text
             StringBuilder novasBib = new StringBuilder()
@@ -63,7 +74,8 @@ project.tasks.register('posBuildWeb') {
             }
             xmlArq = linhasLimpas.join('\n')
 
-            compDep.files.each { File arquivo ->
+            compDepProv.get().each { File loc ->
+                File arquivo = loc.asFile
                 String caminho = arquivo.absolutePath.replace(File.separator, '/')
                 boolean eJar = caminho.endsWith('.jar')
                 boolean jaExiste = xmlArq.contains("path=\"${caminho}\"")
@@ -78,7 +90,7 @@ project.tasks.register('posBuildWeb') {
                     xmlArq = xmlArq.replace('</classpath>', novasBib.toString() + '</classpath>')
                 }
                 classpathArq.text = xmlArq
-                println ".classpath de ${appNomeProv.get()} (Web) atualizado via posBuildWeb."
+                println ">> INFO: .classpath de ${appNomeProv.get()} (Web) atualizado."
             }
         }
     }
@@ -91,3 +103,5 @@ tasks.named('processResources') {
 tasks.withType(Jar).configureEach {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
+// Biblioteras para serem usadas no código
+// dependencies {}

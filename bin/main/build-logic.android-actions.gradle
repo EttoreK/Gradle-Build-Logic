@@ -17,23 +17,23 @@ Provider<String> simuladorProv = ( providers.exec {
         ignoreExitValue = true 
     }.standardOutput.asText.map { saida ->
         String texto = saida.trim()
-        // Se a saída estiver vazia (comando falhou silenciosamente ou não há AVDs)
+        // Se a saída estiver vazia o comando falhou silenciosamente ou não há AVDs
         if (texto.isEmpty()) {
             println 'AVISO: Nenhum AVD encontrado ou erro no comando. Usando padrão.'
             return null // retornar null dispara o .orElse() abaixo
         }
-        // Pega a primeira linha (primeiro simulador encontrado)
+        // Pega a primeira linha, primeiro simulador encontrado
         return texto.lines().findFirst().map { it.trim() }.orElse(null)
     }.orElse(simuladorUsualProv)
 )
-// limpa todo o diretório de build
+// Limpa todo o diretório de build
 tasks.register('cleanAndroid') {
     group = 'WebActions'
     description = 'Limpa os builds anteriores do Android'
     outputs.upToDateWhen { false }
     finalizedBy tasks.named('clean')
 }
-// Manipulação do arquivo .classpath para o VSCODE parar de reclamar
+// Manipulação do arquivo .classpath para o VS Code parar de reclamar
 tasks.register('posBuild') {
     group = 'androidActions'
     description = 'Sobereescreve o .classpath incluindo módulos e dependências'
@@ -41,18 +41,22 @@ tasks.register('posBuild') {
     // captura todas as dependências de compilação Bibliotecas e Subprojetos
     Provider<List<RegularFile>> bootClasspathProv = androidComponents.sdkComponents.bootClasspath
     Provider<Directory> buildDirProv = layout.buildDirectory
-    RegularFile classpathArqProv = layout.projectDirectory.file('.classpath')
-    org.gradle.api.file.FileCollection compDep = configurations.debugCompileClasspath
+    Provider<RegularFile> classpathArqProv = project.providers.provider { 
+        layout.projectDirectory.file('.classpath') 
+    }
+    Provider<Set<FileSystemLocation>> compDepProv = configurations.named(
+        'debugCompileClasspath'
+    ).flatMap { it.elements }
 
-    inputs.files compDep
+    inputs.files compDepProv
     inputs.file(classpathArqProv).optional()
 
     doLast {
-        File classpathArq = classpathArqProv.asFile
+        File classpathArq = classpathArqProv.get().asFile
 
         if (classpathArq.exists() && classpathArq.canWrite()) {
-            String compDir = buildDirProv.get().asFile.absolutePath.replace(File.separator,'/')
             List<RegularFile> bootArqs = bootClasspathProv.get()
+            String compDir = buildDirProv.get().asFile.absolutePath.replace(File.separator,'/')
             String xmlArq = classpathArq.text
             String rDir = String.join('', compDir, '/intermediates/',
                 'compile_and_runtime_not_namespaced_r_class_jar/debug/processDebugResources/R.jar'
@@ -103,7 +107,7 @@ tasks.register('posBuild') {
 
             if (!bootArqs.isEmpty()) {
                 String andrdArqs = bootArqs.first().asFile.absolutePath.replace(File.separator,'/')
-                // Verifica se já existe no seu XML, se não, injeta!
+                // Verifica se já existe no XML, se não, injeção
                 if (!xmlArq.contains(andrdArqs)) {
                     novasBib.append("    <classpathentry kind=\"lib\" path=\"${andrdArqs}\"/>\n")
                 }
@@ -113,12 +117,13 @@ tasks.register('posBuild') {
                 novasBib.append("    <classpathentry kind=\"lib\" path=\"${rDir}\"/>\n")
             }
             // Pega o JAR de qualquer outra lib que não virou AAR
-            compDep.files.each { arquivo ->
-                String caminho = arquivo.path.replace(File.separator, '/')
-                // Regras de filtragem para não duplicar ou sujar
+            compDepProv.get().each { loc ->
+                File arquivo = loc.asFile
+                String caminho = arquivo.absolutePath.replace(File.separator, '/')
+                // Regras de filtragem para não duplicar
                 boolean eJar = caminho.endsWith('.jar')
                 boolean jaExiste = xmlArq.contains("path=\"${caminho}\"")
-                // Filtramos o que já é tratado pela pasta aarLibraries para evitar duplicidade
+                // Filtra o que já é tratado pela pasta aarLibraries para evitar duplicar
                 boolean estaNaPastaAarLib = caminho.contains('/aarLibraries/') 
                 
                 if (eJar && !jaExiste && !estaNaPastaAarLib) {
@@ -149,10 +154,10 @@ tasks.register('posBuild') {
         }
     }
 }
-// build especificamente o Android
+// Compila o Android
 tasks.register('buildAndroid') {
     group = 'androidActions'
-    description = 'Builda o projeto Android (Debug e Release)'
+    description = 'Compila o projeto Android (Debug e Release)'
     mustRunAfter tasks.named('cleanAndroid')
     finalizedBy tasks.named('posBuild')
     inputs.files(tasks.named('assemble'))
@@ -197,11 +202,10 @@ tasks.register('runAndroid', Exec) {
             'CPUID.01H:ECX.xsave',
             'CPUID.01H:ECX.avx'
         ]
-        // Detecção básica de SO para rodar o comando "start" (Windows) ou "&" (Linux/Mac)
+        // Detecção básica de SO para rodar o comando 'start' (Windows) ou '&' (Linux/Mac)
         if (System.getProperty('os.name').toLowerCase().contains('windows')) {
             String filtro = 'findstr /V ' + saidaFiltro.collect { 
-                "/C:\"${it}\""
-                // "/${winDiscProv.get()}:\"${it}\"" 
+                "/${winDiscProv.get()}:\"${it}\"" 
             }.join(' ')
             new ProcessBuilder(
                 'cmd', '/c', "start cmd /k \"${parametros} 2>&1 | ${filtro}\""
@@ -243,3 +247,5 @@ tasks.register('testAndroid') {
     inputs.files(tasks.named('check'))
     inputs.files(tasks.named('connectedCheck'))
 }
+// Biblioteras para serem usadas no código
+// dependencies {}

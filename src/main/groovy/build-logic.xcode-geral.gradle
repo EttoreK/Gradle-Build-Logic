@@ -1,3 +1,4 @@
+// Declaração dos plugins
 // plugins {}
 // Atalhos para libs.versions.toml para facilitar a leitura
 Object ver = libs.versions
@@ -5,11 +6,11 @@ Object val = ver.valores
 Object xcc = val.xcodeConfig
 Object propsLocal = gradle.ext.propsLocal
 // Definição de provedores para acesso à valores de configuração e diretórios
-Directory projDir = layout.projectDirectory // diretório app do build.gradle
+Provider<Directory> projDirProv = project.providers.provider { layout.projectDirectory }
 Provider<Boolean> eMacProv = providers.systemProperty('os.name').map { os ->
     os.toLowerCase().contains('mac')
 }
-Provider<String> srcDir = projDir.dir(xcc.appDir) // srcMainDir.dir('swift')
+Provider<Directory> srcDirProv = projDirProv.flatMap { it.dir(xcc.appDir) }
 Provider<String> winDiscProv = project.providers.provider { 
     propsLocal.getProperty('unidade.win', 'C') 
 }
@@ -75,8 +76,8 @@ project.ext.set('xcodeVars', [
     ver: ver,
     val: val,
     xcc: xcc,
-    projDir: projDir,
-    srcDir: srcDir,
+    projDirProv: projDirProv,
+    srcDirProv: srcDirProv,
     nomeAppProv: nomeAppProv,
     xcodeProjProv: xcodeProjProv,
     xcUnitTesteNomeProv: xcUnitTesteNomeProv,
@@ -97,3 +98,5 @@ project.ext.set('xcodeVars', [
     versaoNumeroProv: versaoNumeroProv,
     buildXDirProv: buildXDirProv
 ])
+// Biblioteras para serem usadas no código
+// dependencies {}

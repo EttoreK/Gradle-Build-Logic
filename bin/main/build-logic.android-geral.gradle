@@ -1,4 +1,4 @@
-// Declaração dos plugins do fulcro
+// Declaração dos plugins
 // plugins {}
 // Atalhos para libs.versions.toml para facilitar a leitura
 Object ver = libs.versions
@@ -33,7 +33,7 @@ android {
             'UnknownNullness'
         ]
         
-        warningsAsErrors = true // build falhe caso uma dessas regras seja quebrada
+        warningsAsErrors = true // build falha caso uma dessas regras seja quebrada
         checkDependencies = false // mantém o build rápido
     }
     // Define o local do código para o android
@@ -65,7 +65,7 @@ android {
                     showStandardStreams = true // redireciona tuda saída de código para o terminal
                 }
 
-                useJUnitPlatform() // habilita JUnit 5
+                useJUnitPlatform() // habilita JUnit
             }
             
             returnDefaultValues = true // não quebrar ao acessar classes do SDK
@@ -79,7 +79,7 @@ java {
         languageVersion = JavaLanguageVersion.of(ver.javaSource.get().toInteger())
     }
 }
-
+// Configuração das tarefas de teste
 tasks.withType(Test).configureEach {
     outputs.upToDateWhen { false }
 

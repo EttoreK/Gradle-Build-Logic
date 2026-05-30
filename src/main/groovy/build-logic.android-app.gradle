@@ -10,8 +10,7 @@ Provider<String> projNomeProv = providers.gradleProperty('projNome')
 Provider<String> appVerNumProv = providers.gradleProperty('appVerNum')
 Provider<String> appVerNomeProv = providers.gradleProperty('appVerNome')
 Provider<String> saidaDirProv = val.buildDir.android
-Directory projDir = project.rootProject.layout.projectDirectory
-project.layout.buildDirectory.set(projDir.dir(saidaDirProv))
+project.layout.buildDirectory.set(project.rootProject.layout.projectDirectory.dir(saidaDirProv))
 // Definição das características do aplicativo
 android {
     // Configurações padrão para o aplicativo Android
@@ -77,12 +76,15 @@ androidComponents {
 }
 // Biblioteras para serem usadas no código
 dependencies {
+    androidTestImplementation libs.adrxTestCore // conversa com o Android
+    androidTestImplementation libs.adrxTestExtJunit // empacota tudo isso e manda o executor do Java
+    androidTestImplementation libs.adrxTestRules // cria atalhos fáceis para abrir e fechar as telas
     androidTestImplementation libs.xprssCore // framework do Andoird para testes
     implementation libs.consLt // layouts complexos
     implementation libs.material // experiência visual
     implementation libs.adrxActivity // base para fazer Activities
     implementation libs.adrxAppcompat // compatibilidade com versões antigas
-    implementation libs.adrxAnnotation // necessário para usar @NonNull, @Nullable
+    implementation libs.adrxAnnotat // necessário para usar @NonNull, @Nullable
     implementation libs.lifeCycle // necessário pro classpath
     testImplementation libs.junitAPI // api dp Junit 5
     testImplementation libs.mockitoCore // para usar o mockito

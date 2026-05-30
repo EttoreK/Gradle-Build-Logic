@@ -1,3 +1,4 @@
+// Declaração dos plugins
 // plugins {}
 // Provedores para acesso lazy às variáveis
 Object ver = libs.versions
@@ -14,11 +15,8 @@ java {
 // Biblioteras para serem usadas no código
 dependencies {
     compileOnly libs.jetBsAnnot // biblioteca padrão para @Nullable e @NonNull
-    testImplementation libs.junitAPI // api dp Junit 5
     testImplementation libs.mockitoCore // para usar o mockito
     testImplementation libs.mockitoJunit // para mockar métodos estáticos
-    testRuntimeOnly libs.junitEngine // engine do Junit 5
-    testRuntimeOnly libs.junitPlt // talvez redundante, plataforma do junit 5
 }
 // Aplica o tipo de teste como JUnit
 test {

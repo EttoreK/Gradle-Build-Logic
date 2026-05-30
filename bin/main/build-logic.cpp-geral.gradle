@@ -1,3 +1,5 @@
+// Declaração dos plugins
+// plugins {}
 // Configuração das ferramentas de compilação. Garante o uso do compilador correto
 toolChains {
     // Diz para o Gradle procurar especificamente pelo Gcc
@@ -11,5 +13,7 @@ toolChains {
         ucrtX64(Gcc) { path "${msysDir}/ucrt64/bin" }
     }
 
-    gcc(Gcc) // generalizado, funciona para windows e linux 64 32
+    gcc(Gcc) // generalizado, funciona para windows e linux, 64 e 32
 }
+// Biblioteras para serem usadas no código
+// dependencies {}

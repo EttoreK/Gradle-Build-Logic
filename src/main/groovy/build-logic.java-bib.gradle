@@ -1,8 +1,11 @@
+// Declaração dos plugins
+// plugins {}
 // Define o diretório de build
 Provider<String> projNomeProv = providers.gradleProperty('projNome')
 Provider<String> saidaDirProv = libs.versions.valores.buildDir.java
-Directory projDir = project.rootProject.layout.projectDirectory
-project.layout.buildDirectory.set( saidaDirProv.map { dir -> projDir.dir(dir).dir(project.name) } )
+project.layout.buildDirectory.set(saidaDirProv.map { 
+    dir -> project.rootProject.layout.projectDirectory.dir(dir).dir(project.name) 
+})
 // Manipulação do arquivo .classpath para o VSCODE parar de reclamar
 project.afterEvaluate {
     File classpathArq = project.file('.classpath')
@@ -43,7 +46,13 @@ project.afterEvaluate {
         if (houveAlteracao) {
             xmlArq = xmlArq.replace('</classpath>', novasEntradas.toString() + '</classpath>')
             classpathArq.write(xmlArq)
-            println "VSCode .classpath de ${projNome} (Bib) atualizado com sucesso."
+            println ">> INFO: .classpath de ${projNome} (Bib) atualizado com sucesso."
         }
     }
+}
+// Biblioteras para serem usadas no código
+dependencies {
+    testImplementation libs.junitAPI // api dp Junit 5
+    testRuntimeOnly libs.junitEngine // engine do Junit 5
+    testRuntimeOnly libs.junitPlt // talvez redundante, plataforma do junit 5
 }

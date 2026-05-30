@@ -1,3 +1,5 @@
+// Declaração dos plugins
+// plugins {}
 // Atalhos para facilitar a leitura
 Object ver = libs.versions
 Object propsLocal = gradle.ext.propsLocal
@@ -24,30 +26,28 @@ Provider<String> winDiscProv = project.providers.provider {
     propsLocal.getProperty('unidade.win', 'C') 
 }
 Provider<Directory> espolioDirProv = project.rootProject.layout.projectDirectory.dir(espNomeProv)
-Directory projDir = layout.projectDirectory
+Provider<Directory> projDirProv = project.providers.provider { layout.projectDirectory }
 // Se necessário encapsula o comando em uma chamada ssh para a VM
 Closure<List<String>> comandoRemoto = { String os, List<String> cmdEntrada, String extDir = null ->
     if (eWindowsProv.get() && os == 'linux') {
         if (!lnxDonoProv.isPresent() || !lnxSedeProv.isPresent() || !lnxDirProv.isPresent()){
             throw new GradleException('Credenciais não configuradas pra Linux')
         }
-        return [
+        return [ // Cria a pasta base antes de dar o cd
             'ssh', "${lnxDonoProv.get()}@${lnxSedeProv.get()}", 
-            // Cria a pasta base antes de dar o cd
             "mkdir -p '${lnxDirProv.get()}' && cd '${lnxDirProv.get()}' && ${cmdEntrada.join(' ')}"
         ]
     } else if (eLinuxProv.get() && os == 'windows') {
         if (!winDonoProv.isPresent() || !winSedeProv.isPresent() || !winDirProv.isPresent()){
             throw new GradleException('Credenciais não configuradas pra Windows')
         }
-        return [
+        return [ // Cria a pasta antes de dar o cd no Windows
             'ssh', "${winDonoProv.get()}@${winSedeProv.get()}", 
-            // Cria a pasta antes de dar o cd no Windows
             "if not exist \"${winDirProv.get()}\" mkdir \"${winDirProv.get()}\" &",
             "cd /d \"${winDirProv.get()}\" && ${cmdEntrada.join(' ')}"
         ]
     } else {
-        String dirLocal = projDir.asFile.absolutePath
+        String dirLocal = projDirProv.get().asFile.absolutePath
         if (eWindowsProv.get()) {
             // Se foi passado um caminho extra, injeta ele no início do PATH do Windows
             if (extDir != null) {
@@ -78,11 +78,10 @@ Closure<Void> copiaRes = { File dirDestino ->
     File recursosDest = new File(dirDestino, 'recursos')
     if (!recursosDest.exists()) recursosDest.mkdirs()
     
-    println ">> Copiando recursos de '${espolioPasta.name}' para '${recursosDest.name}'..."
-    
+    println ">> INFO: Copiando recursos de '${espolioPasta.name}' para '${recursosDest.name}'..."
     // Caminha recursivamente por todos os arquivos do espolio
     espolioPasta.eachFileRecurse { File origem ->
-        // Calcula o caminho relativo (ex: "textos/pt-BR.json")
+        // Calcula o caminho relativo
         java.nio.file.Path rastro = espolioPasta.toPath().relativize(origem.toPath())
         File destino = new File(recursosDest, rastro.toString())
 
@@ -90,7 +89,7 @@ Closure<Void> copiaRes = { File dirDestino ->
             destino.mkdirs()
         } else {
             destino.parentFile.mkdirs()
-            // Copia substituindo se existir (equivalente ao 'include' do Gradle)
+            // Copia substituindo se existir
             java.nio.file.Files.copy(
                 origem.toPath(), 
                 destino.toPath(), 
@@ -140,13 +139,12 @@ Closure<Void> embuteRes = { ->
     hpp.append('}\n')
 
     String arquivo = hpp.toString()
-    
     // Só salva no disco se o conteúdo realmente mudou
     if (!saidaHpp.exists() || saidaHpp.text != arquivo) {
         saidaHpp.text = arquivo
     }
 }
-
+// Configura o ícone do aplicativo
 Closure<Void> desktop = { String appNome, String caminhoExe ->
     File pngIcon = new File(buildDirProv.get().asFile, 'app_linux.png')
 
@@ -164,7 +162,7 @@ Closure<Void> desktop = { String appNome, String caminhoExe ->
     }
     // Acessa a pasta oculta de aplicativos do usuário
     File localAppsDir = new File(System.getProperty('user.home'), '.local/share/applications')
-    if (!localAppsDir.exists()) localAppsDir.mkdirs() // Cria a pasta se não existir
+    if (!localAppsDir.exists()) localAppsDir.mkdirs() // cria a pasta se não existir
     
     File desktopFile = new File(localAppsDir, "${appNome}.desktop")
     desktopFile.text = """
@@ -182,23 +180,23 @@ Closure<Void> desktop = { String appNome, String caminhoExe ->
     try {
         // Força o GNOME/Wayland a ler a pasta e atualizar os ícones na hora
         Process pUpd = ['update-desktop-database', localAppsDir.absolutePath].execute()
-        pUpd.waitFor()
+        pUpd.waitForProcessOutput(System.out, System.err)
 
         File baseIconDir = new File(System.getProperty('user.home'), '.local/share/icons/hicolor')
         Process pIcon = ['gtk-update-icon-cache', '-f', '-t', baseIconDir.absolutePath].execute()
-        pIcon.waitFor()
+        pIcon.waitForProcessOutput(System.out, System.err)
     } catch(Exception e) {
-        println '>> Aviso: update-desktop-database não rodou, mas o arquivo foi criado.'
+        println '>> AVISO: update-desktop-database não rodou, mas o arquivo foi criado.'
     }
 }
-
+// Coleta as flags de compilação
 Closure<List<String>> pegaFlagsComp = { String alvo, String arqtt, String config, Boolean eRemoto ->
     List<String> flags = ['-std=c++26', '-Os']
     
     if (alvo.toLowerCase() == 'linux') flags << '-I/usr/include/jsoncpp'
     
     flags << (arqtt == 'X86' ? '-m32' : '-m64')
-    // Diferencia Caminhos Locais Absolutos vs Caminhos SSH Relativos
+    // Diferencia Caminhos Locais Absolutos dos Caminhos SSH Relativos
     if (eRemoto) {
         String reDir = genDirProv.get().asFile.absolutePath.replace(File.separator, '/')
         flags << '-Isrc/main/headers'
@@ -209,12 +207,12 @@ Closure<List<String>> pegaFlagsComp = { String alvo, String arqtt, String config
             flags << '-Ibuild/tmp/generated'
         }
     } else {
-        flags << "-I${projDir.asFile.absolutePath}/src/main/bib/svg"
+        flags << "-I${projDirProv.get().asFile.absolutePath}/src/main/bib/svg"
         flags << "-I${genDirProv.get().asFile.absolutePath.replace(File.separator, '/')}".toString()
     }
     return flags
 }
-
+// Coleta as flags de Linkagem
 Closure<List<String>> pegaFlagsLink = { String alvo, String arqtt, String config, Boolean eTeste ->
     List<String> flags = []
     if (config == 'Release') flags.addAll(['-s'])
@@ -228,7 +226,7 @@ Closure<List<String>> pegaFlagsLink = { String alvo, String arqtt, String config
         
         flags << '-Wl,--end-group'
         flags.addAll(['-static-libgcc', '-static-libstdc++'])
-        // Esconde o console se for Release e NÃO for Teste
+        // Esconde o console se for Release e não for Teste
         if (config == 'Release' && !eTeste) {
             flags << '-mwindows'
         }
@@ -257,6 +255,7 @@ Closure<List<String>> pegaFlagsLink = { String alvo, String arqtt, String config
     }
     return flags
 }
+// Envia os arquivos para a máquina virtual Linux
 tasks.register('syncToLinux') {
     group = 'C++ Actions'
     description = 'Sincroniza os arquivos fonte para a VM Linux via SSH'
@@ -266,22 +265,22 @@ tasks.register('syncToLinux') {
     inputs.files(tasks.named('criaEspolio'))
     inputs.dir project.file('src')
     inputs.dir espolioDirProv
-    outputs.upToDateWhen { true } // Executa 1 vez
+    outputs.upToDateWhen { true } // executa só 1 vez
     
     doFirst {
-        // Prepara as pastas no Linux (adicionado o tmp e icons explicitamente)
+        // Prepara as pastas no Linux, adiciona o tmp e icones explicitamente
         Process procMkdir = comandoRemoto( 'linux', 
             ['mkdir', '-p', "${lnxDirProv.get()}/build/tmp", "${lnxDirProv.get()}/build/icons"]
         ).execute()
-        procMkdir.waitFor()
+        procMkdir.waitForProcessOutput(System.out, System.err)
     }
     
     doLast {
         String sshLogin = "${lnxDonoProv.get()}@${lnxSedeProv.get()}"
         String base = lnxDirProv.get()
         
-        println '>> [Linux] Enviando arquivos fonte e recursos...'
-        // Passando 'projDir.asFile' para o scp achar a pasta 'src' e 'espolio' localmente
+        println '>> INFO: [Linux] Enviando arquivos fonte e recursos...'
+        Directory projDir = projDirProv.get()
         String srcDir = projDir.dir('src').asFile.absolutePath.replace(File.separator, '/')
         String espDir = espolioDirProv.get().asFile.absolutePath.replace(File.separator, '/')
         
@@ -291,14 +290,14 @@ tasks.register('syncToLinux') {
         procScpFonte.waitForProcessOutput(System.out, System.err)
         if (procScpFonte.exitValue() != 0) throw new GradleException('Falha no upload dos fontes!')
         
-        println '>> [Linux] Enviando header gerado...'
+        println '>> INFO: [Linux] Enviando header gerado...'
         Process procScpH = ([
             'scp', '-r', '-p', 
             genDirProv.get().asFile.absolutePath, "${sshLogin}:${base}/build/tmp/"
         ]).execute(null, projDir.asFile)
         procScpH.waitForProcessOutput(System.out, System.err)
         
-        println '>> [Linux] Enviando ícone...'
+        println '>> INFO: [Linux] Enviando ícone...'
         File pngIcon = new File(buildDirProv.get().asFile, 'app_linux.png')
         if (pngIcon.exists()) {
             Process procScpIcone = (
@@ -307,34 +306,34 @@ tasks.register('syncToLinux') {
             procScpIcone.waitForProcessOutput(System.out, System.err)
         }
         
-        println '>> Sincronização para Linux concluída!'
+        println '>> INFO: Sincronização para Linux concluída!'
     }
 }
-
+// Envia os arquivos para a máquina virtual Windows
 tasks.register('syncToWindows') {
     group = 'C++ Actions'
     description = 'Sincroniza os arquivos fonte para a VM Windows via SSH'
     onlyIf { eLinuxProv.get() }
-    // Regras de inputs
     mustRunAfter tasks.named('criaEspolio') // roda a closure geradora antes de compilar
     inputs.files(tasks.named('criaEspolio'))
     inputs.dir project.file('src')
     inputs.dir espolioDirProv
-    outputs.upToDateWhen { true } // Executa 1 vez
+    outputs.upToDateWhen { true } // executa só 1 vez
     
     doFirst {
         // Prepara as pastas no windows
         Process procMkdir = comandoRemoto(
             'windows', ['mkdir', '-p', winDirProv.get().replace(File.separator, '/')]
         ).execute()
-        procMkdir.waitFor()
+        procMkdir.waitForProcessOutput(System.out, System.err)
     }
     
     doLast {
         String sshLogin = "${winDonoProv.get()}@${winSedeProv.get()}"
         String base = winDirProv.get()
         
-        println '>> [Windows] Enviando arquivos fonte e recursos...'
+        println '>> INFO: [Windows] Enviando arquivos fonte e recursos...'
+        Directory projDir = projDirProv.get()
         String srcDir = projDir.dir('src').asFile.absolutePath.replace(File.separator, '/')
         String espDir = espolioDirProv.get().asFile.absolutePath.replace(File.separator, '/')
         
@@ -344,14 +343,14 @@ tasks.register('syncToWindows') {
         procScpFonte.waitForProcessOutput(System.out, System.err)
         if (procScpFonte.exitValue() != 0) throw new GradleException('Falha no upload dos fontes!')
         
-        println ">> [Windows] Enviando header gerado..."
+        println ">> INFO: [Windows] Enviando header gerado..."
         Process procScpH = ([
             'scp', '-r', '-p', 
             genDirProv.get().asFile.absolutePath, "${sshLogin}:${base}/build/tmp/"
         ]).execute(null, projDir.asFile)
         procScpH.waitForProcessOutput(System.out, System.err)
         
-        println '>> [Windows] Enviando ícones e RC...'
+        println '>> INFO: [Windows] Enviando ícones e RC...'
         File obj32 = new File(buildDirProv.get().asFile, 'icone32.o')
         File obj64 = new File(buildDirProv.get().asFile, 'icone64.o')
         if (obj32.exists() && obj64.exists()) {
@@ -362,46 +361,44 @@ tasks.register('syncToWindows') {
             procScpIcone.waitForProcessOutput(System.out, System.err)
         }
 
-        println '>> Sincronização para Windows concluída!'
+        println '>> INFO: Sincronização para Windows concluída!'
     }
 }
-
+// Limpa o ambiente para melhores resultados
 tasks.register('cleanC') {
     group = 'C++ Actions'
     description = 'Limpa os diretórios de build C++ localmente e nas VMs (via SSH)'
 
     doLast {
-        // Limpeza Local
         File dirLocal = buildDirProv.get().asFile
         if (dirLocal.exists()) {
-            println ">> [Local] Limpando diretório de build C++..."
+            println '>> INFO: [Local] Limpando diretório de build C++...'
             dirLocal.deleteDir()
         }
-
         // Limpeza Remota na VM Linux
         if (eWindowsProv.get()) {
             try {
-                println ">> [Linux] Limpando diretório remoto via SSH..."
+                println '>> INFO: [Linux] Limpando diretório remoto via SSH...'
                 // Manda um rm -rf na pasta build da VM Linux
                 Process pLnx = comandoRemoto(
                     'linux', ["rm -rf '${lnxDirProv.get()}/build'"]
                 ).execute()
-                pLnx.waitFor()
+                pLnx.waitForProcessOutput(System.out, System.err)
             } catch(Exception e) { 
-                println ">> Aviso: Não foi possível limpar a VM Linux. Ela pode estar desligada." 
+                println '>> AVISO: Não foi possível limpar a VM Linux. Ela pode estar desligada.' 
             }
         }
         // Limpeza Remota na VM Windows
         if (eLinuxProv.get()) {
             try {
-                println ">> [Windows] Limpando diretório remoto via SSH..."
+                println '>> INFO: [Windows] Limpando diretório remoto via SSH...'
                 // Manda um rmdir (cmd) na pasta build da VM Windows
                 Process pWin = comandoRemoto(
                     'windows', ["rmdir /s /q \"${winDirProv.get()}\\build\""]
                 ).execute()
-                pWin.waitFor()
+                pWin.waitForProcessOutput(System.out, System.err)
             } catch(Exception e) { 
-                println ">> Aviso: Não foi possível limpar a VM Windows. Ela pode estar desligada." 
+                println '>> AVISO: Não foi possível limpar a VM Windows. Ela pode estar desligada.' 
             }
         }
     }
@@ -409,11 +406,11 @@ tasks.register('cleanC') {
 // Certifica que o espolio entrará nos arquivos
 tasks.register('criaEspolio') {
     group = 'C++ Setup'
-    description = "Converte os arquivos do ${espNomeProv.get()} em um Header C++"
+    description = "Converte os arquivos dos recursos em um Header C++"
     inputs.dir espolioDirProv
     outputs.file(new File(genDirProv.get().asFile, "${espNomeProv.get()}.hpp"))
     
-    doLast { embuteRes() } // Executa a sua closure original!
+    doLast { embuteRes() }
 }
 // Verifica e instala dependências automaticamente
 tasks.register('instalaDeps', Exec) {
@@ -422,55 +419,55 @@ tasks.register('instalaDeps', Exec) {
     outputs.upToDateWhen { false } // sempre executa
 
     doLast {
-        println '>> Instalando dependências na VM Windows...'
-        List<String> depsWin = [
-            'mingw-w64-ucrt-x86_64-jsoncpp', 
-            'mingw-w64-i686-jsoncpp',
-            'mingw-w64-ucrt-x86_64-toolchain', 
-            'mingw-w64-i686-toolchain',
-            'mingw-w64-ucrt-x86_64-imagemagick', 
-            'mingw-w64-ucrt-x86_64-librsvg',
-            'mingw-w64-ucrt-x86_64-gtest', 
-            'mingw-w64-i686-gtest'
-        ]
-        // Chamando o pacman do msys2 por fora
-        try {
-            commandLine comandoRemoto('windows', [
-                "${winDiscProv.get()}:/msys64/usr/bin/bash.exe -l -c",
-                "\"pacman -S --needed --noconfirm ${depsWin.join(' ')}\""
-            ])
-        } catch(Exception e) { println '>> Aviso: VM Windows indisponível.' }
-
-        println '>> Instalando dependências na VM Linux...'
-        List<String> depsLnx = [
-            'build-essential', 
-            'cmake', 
-            'g++-multilib', 
-            'libc6-dev-i386',
-            'libx11-dev', 
-            'libx11-dev:i386', 
-            'libgtest-dev', 
-            'libjsoncpp-dev',
-            'libjsoncpp-dev:i386', 
-            'imagemagick', 
-            'librsvg2-bin'
-        ]
-        String aptCmd = "sudo bash -c 'apt update && apt install -y ${depsLnx.join(' ')}'"
-        try {
-            commandLine comandoRemoto('linux', [aptCmd])
-        } catch(Exception e) { println '>> Aviso: VM Linux indisponível.' }
+        if (eWindowsProv.get()) {
+            println '>> INFO: Instalando dependências do Windows...'
+            List<String> depsWin = [
+                'mingw-w64-ucrt-x86_64-jsoncpp', 
+                'mingw-w64-i686-jsoncpp',
+                'mingw-w64-ucrt-x86_64-toolchain', 
+                'mingw-w64-i686-toolchain',
+                'mingw-w64-ucrt-x86_64-imagemagick', 
+                'mingw-w64-ucrt-x86_64-librsvg',
+                'mingw-w64-ucrt-x86_64-gtest', 
+                'mingw-w64-i686-gtest'
+            ]
+            // Chamando o pacman do msys2
+            try {
+                commandLine comandoRemoto('windows', [
+                    "${winDiscProv.get()}:/msys64/usr/bin/bash.exe -l -c",
+                    "\"pacman -S --needed --noconfirm ${depsWin.join(' ')}\""
+                ])
+            } catch(Exception e) { println '>> AVISO: VM Windows indisponível.' }
+        } else {
+            println '>> INFO: Instalando dependências do Linux...'
+            List<String> depsLnx = [
+                'build-essential', 
+                'cmake', 
+                'g++-multilib', 
+                'libc6-dev-i386',
+                'libx11-dev', 
+                'libx11-dev:i386', 
+                'libgtest-dev', 
+                'libjsoncpp-dev',
+                'libjsoncpp-dev:i386', 
+                'imagemagick', 
+                'librsvg2-bin'
+            ]
+            String aptCmd = "sudo bash -c 'apt update && apt install -y ${depsLnx.join(' ')}'"
+            try {
+                commandLine comandoRemoto('linux', [aptCmd])
+            } catch(Exception e) { println '>> AVISO: VM Linux indisponível.' }
+        }
     }
 }
-// Closure centralização de builds
+// Centralização de compilação
 Closure<Void> cbuild = { Task tarefa, String alvo, String arqtt, String config ->
     String osAlvo = alvo.toLowerCase()
     String appDir = "build/install/main/${config}/${alvo}/${arqtt}/lib".toLowerCase()
-    String appNome = appNomeProv.get()
-    String nomeExe = alvo == 'Windows' ? "${appNome}.exe" : appNome
 
     tarefa.group = 'C++ Actions'
     tarefa.description = "Compila nativamente via SSH em ${alvo}-${arqtt}"
-    // O Build aguarda o Sync (se for remoto) ou a Geração (se for local)
+    // O build aguarda o Sync, se for remoto, ou a Geração, se for local
     if (osAlvo == 'windows' && eLinuxProv.get()) {
         tarefa.inputs.files(tasks.named('syncToWindows'))
     } else if (osAlvo == 'linux' && eWindowsProv.get()) {
@@ -491,20 +488,23 @@ Closure<Void> cbuild = { Task tarefa, String alvo, String arqtt, String config -
         }
 
         gpp.addAll(pegaFlagsComp(alvo, arqtt, config, true)) // injeção de flags
-        // Código Fonte
+
+        Directory projDir = projDirProv.get()
         File pastaCpp = new File(projDir.asFile, 'src/main/cpp')
         if (pastaCpp.exists()) {
             pastaCpp.eachFileRecurse(groovy.io.FileType.FILES) { File arq ->
                 if (arq.name.endsWith('.cpp')) {
-                    String caminhoRelativo = projDir.asFile.toPath().relativize(arq.toPath()).toString()
-                    gpp << caminhoRelativo.replace(File.separator, '/')
+                    String caminhoRel = projDir.asFile.toPath().relativize(arq.toPath()).toString()
+                    gpp << caminhoRel.replace(File.separator, '/')
                 }
             }
         }
         // Insere do ícone do Windows
         if (osAlvo == 'windows') {
             if (eWindowsProv.get()) { 
-                File arqIco = new File(buildDirProv.get().asFile, arqtt == 'X86' ? 'icone32.o' : 'icone64.o')
+                File arqIco = new File(
+                    buildDirProv.get().asFile, arqtt == 'X86' ? 'icone32.o' : 'icone64.o'
+                )
                 gpp << arqIco.absolutePath.replace(File.separator, '/')
             } else { 
                 gpp << (arqtt == 'X86' ? 'build/icons/icone32.o' : 'build/icons/icone64.o')
@@ -521,27 +521,28 @@ Closure<Void> cbuild = { Task tarefa, String alvo, String arqtt, String config -
         } else {
             String dirCmd
             if (osAlvo == 'windows') {
-                dirCmd = "if not exist \"${appDir.replace('/', '\\')}\""
-                dirCmd += "mkdir \"${appDir.replace('/', '\\')}\""
+                dirCmd = "if not exist \"${appDir.replace(File.separator, '\\')}\""
+                dirCmd += "mkdir \"${appDir.replace(File.separator, '\\')}\""
             } else {
                 dirCmd = "mkdir -p '${appDir}'"
             } 
             Process procDir = comandoRemoto(osAlvo, [dirCmd]).execute()
-            procDir.waitFor()
+            procDir.waitForProcessOutput(System.out, System.err)
         }
-        // Saída do Binário
-        String saidaDir
+        String appNome = appNomeProv.get()
+        String nomeExe = alvo == 'Windows' ? "${appNome}.exe" : appNome
+        String saidaDir // saída do binário
         if (eWindowsProv.get() && osAlvo == 'windows') {
             saidaDir = new File(
                 rootDir, "${appDir}/${nomeExe}").absolutePath.replace(File.separator, '/')
         } else {
             // Na VM Remota, o saidaDir é puro e direto
             saidaDir = "${appDir}/${nomeExe}"
-            if (osAlvo == 'windows') saidaDir = saidaDir.replace('/', '\\')
+            if (osAlvo == 'windows') saidaDir = saidaDir.replace(File.separator, '\\')
         }
         gpp << '-o' << "\"${saidaDir}\""
 
-        println ">> Compilando [${alvo}-${arqtt}] nativamente na VM..."
+        println ">> INFO: Compilando [${alvo}-${arqtt}] nativamente na VM..."
         // Passa o caminho exato do MSYS2 para blindar as DLLs do Windows
         String dirDireto = null
         if (eWindowsProv.get() && osAlvo == 'windows') {
@@ -553,7 +554,7 @@ Closure<Void> cbuild = { Task tarefa, String alvo, String arqtt, String config -
         if (procCompl.exitValue() != 0) {
             throw new GradleException("Falha na compilação do C++ [${alvo}-${arqtt}]")
         }
-        println ">> Sucesso! Binário salvo em: ${saidaDir}"
+        println ">> INFO: Sucesso! Binário salvo em: ${saidaDir}"
     }
 }
 // Tarefas de build
@@ -585,7 +586,7 @@ Closure<Void> crun = { Task tarefa, String alvo, String arqtt, String config ->
         String appNome = appNomeProv.get()
         String osAlvo = alvo.toLowerCase()
         String nomeExe = alvo == 'Windows' ? "${appNome}.exe" : appNome
-        File rootDir = projDir.asFile.parentFile
+        File rootDir = projDirProv.get().asFile.parentFile
         
         List<String> cmdsTerminal
         if (osAlvo == 'windows') {
@@ -595,7 +596,8 @@ Closure<Void> crun = { Task tarefa, String alvo, String arqtt, String config ->
             } else {
                 String dirRemoto = "build/install/main/${appDir}"
                 cmdsTerminal = [
-                    "cd \"${dirRemoto.replace('/', '\\')}\"", '&&', 'start', '""', nomeExe
+                    "cd \"${dirRemoto.replace(File.separator, '\\')}\"", 
+                    '&&', 'start', '\"\"', nomeExe
                 ]
             }
         } else {
@@ -620,15 +622,13 @@ Closure<Void> crun = { Task tarefa, String alvo, String arqtt, String config ->
                 appNome, new File(installDirProv.get().dir(appDir).asFile, nomeExe).absolutePath)
         }
 
-        println ">> Executando ${alvo}..."
+        println ">> INFO: Executando ${alvo}..."
         String dirDireto = null
         if (eWindowsProv.get() && osAlvo == 'windows') {
             dirDireto = "${winDiscProv.get()}:/msys64/${arqtt == 'X86' ? 'mingw32' : 'ucrt64'}/bin"
         }
         Process procRun = comandoRemoto(osAlvo, cmdsTerminal, dirDireto).execute()
-
-        procRun.consumeProcessOutput(System.out, System.err)
-        procRun.waitFor()
+        procRun.waitForProcessOutput(System.out, System.err)
         if (procRun.exitValue() != 0) {
             throw new GradleException('A execução falhou.')
         }
@@ -643,7 +643,7 @@ tasks.register('runLnx64') { crun(it, 'Linux', 'X86-64', 'Debug') }
 tasks.register('runLnx64Release') { crun(it, 'Linux', 'X86-64', 'Release') }
 tasks.register('runLnx32') { crun(it, 'Linux', 'X86', 'Debug') }
 tasks.register('runLnx32Release') { crun(it, 'Linux', 'X86', 'Release') }
-// Closure centralização de teste
+// Centralização de teste
 Closure<Void> ctest = { Task tarefa, String alvo, String arqtt, String config ->
     String testDir = "${alvo}/${arqtt}/lib".toLowerCase()
     String tarefaNativaNome = "installTest${alvo}${arqtt}"
@@ -667,10 +667,8 @@ Closure<Void> ctest = { Task tarefa, String alvo, String arqtt, String config ->
         copiaRes(exeDir)
 
         if (osAlvo == 'linux') {
-            println ">> Compilando Testes [${alvo}-${arqtt}] nativamente na VM..."
+            println ">> INFO: Compilando Testes [${alvo}-${arqtt}] nativamente na VM..."
             String dirRemoto = "build/install/test/${testDir}"
-            
-            // Unificando com a Fonte da Verdade
             List<String> cmdGppTest = ['g++']
             cmdGppTest.addAll(pegaFlagsComp(alvo, arqtt, config, true))
             cmdGppTest << "\$(find src/main/cpp -name '*.cpp' ! -name 'app.cpp')"
@@ -685,19 +683,19 @@ Closure<Void> ctest = { Task tarefa, String alvo, String arqtt, String config ->
             pComp.waitForProcessOutput(System.out, System.err)
 
             if (pComp.exitValue() != 0) {
-                throw new GradleException('Falha ao compilar testes no Linux!')
+                throw new GradleException('Falha ao compilar testes no Linux')
             }
         }
         
         List<String> cmdsTerminal
         if (osAlvo == 'windows') {
             if (eWindowsProv.get()) {
-                // Usa o diretório absoluto local do exeDir (app-linwin\build\install\test\...)
+                // Usa o diretório absoluto local do exeDir
                 String absoluteDir = exeDir.absolutePath
                 cmdsTerminal = ["cd /d \"${absoluteDir}\"", '&&', nomeExe]
             } else {
                 String dirRemoto = "build/install/test/${testDir}"
-                cmdsTerminal = ["cd \"${dirRemoto.replace('/', '\\')}\"", '&&', nomeExe]
+                cmdsTerminal = ["cd \"${dirRemoto.replace(File.separator, '\\')}\"", '&&', nomeExe]
             }
         } else {
             String dirRemoto = "build/install/test/${testDir}"
@@ -712,7 +710,7 @@ Closure<Void> ctest = { Task tarefa, String alvo, String arqtt, String config ->
             cmdsTerminal = [envSetup, '&&', "cd '${dirRemoto}'", '&&', "./${nomeExe}"]
         }
 
-        println ">> Executando testes unitários em ${alvo}..."
+        println ">> INFO: Executando testes unitários em ${alvo}..."
         String dirDireto = null
         if (eWindowsProv.get() && osAlvo == 'windows') {
             dirDireto = "${winDiscProv.get()}:/msys64/${arqtt == 'X86' ? 'mingw32' : 'ucrt64'}/bin"
@@ -779,7 +777,7 @@ Closure<Void> criaIcoWin = { File svgFundo, File svgFrente, File icoArq, File rc
             throw new GradleException("Falha no windres para ${objArq.name}")
         }
     }
-    // Executa a injeção isolada para 32 e 64 bits
+    // Injeção isolada para 32 e 64 bits
     if (eWindowsProv.get()) {
         rodaWindres("${msysDir}:/msys64/mingw32/bin/windres.exe", 
             objArq32, "${msysDir}:\\msys64\\mingw32\\bin")
@@ -858,25 +856,31 @@ tasks.register('lnxIco') {
         }
     }
 }
+Closure<List> pegeDefinicoes = { String name -> return [
+    name.contains('Release') ? 'Release' : 'Debug',
+    name.contains('Windows') || name.contains('windows') ? 'Windows' : 'Linux',
+    name.contains('X86') && !name.contains('X86-64') && !name.contains('x86_64') ? 'X86' : 'X86-64',
+    name.contains('Test') || name.contains('test')
+]}
 // Faz a compilação C++ depender da geração desse arquivo primeiro
 tasks.withType(CppCompile).configureEach {
     mustRunAfter tasks.named('criaEspolio') // roda a closure geradora antes de compilar
     inputs.files(tasks.named('criaEspolio'))
-
-    String config = name.contains('Release') ? 'Release' : 'Debug'
-    String alvo = name.contains('Windows') || name.contains('windows') ? 'Windows' : 'Linux'
-    String arqtt = name.contains('X86') && !name.contains('X86-64') && !name.contains('x86_64') ? 'X86' : 'X86-64'
     
+    String config, alvo, arqtt
+    (config, alvo, arqtt) = pegeDefinicoes(name)
     compilerArgs.addAll(project.providers.provider {
-        pegaFlagsComp(alvo, arqtt, config, false) // false = Native/Local
+        pegaFlagsComp(alvo, arqtt, config, false)// false = Native/Local
     })
 }
 // Modifica a criação do executále para usar as bibliotecas necessárias
 tasks.withType(LinkExecutable).configureEach {
-    String config = name.contains('Release') ? 'Release' : 'Debug'
-    String alvo = name.contains('Windows') || name.contains('windows') ? 'Windows' : 'Linux'
-    String arqtt = name.contains('X86') && !name.contains('X86-64') && !name.contains('x86_64') ? 'X86' : 'X86-64'
-    boolean eTest = name.contains('Test') || name.contains('test')
-    
-    linkerArgs.addAll(project.providers.provider { pegaFlagsLink(alvo, arqtt, config, eTest) })
+    String config, alvo, arqtt
+    boolean eTest 
+    (config, alvo, arqtt, eTest) = pegeDefinicoes(name)
+    linkerArgs.addAll(project.providers.provider { 
+        pegaFlagsLink(alvo, arqtt, config, eTest)
+    })
 }
+// Biblioteras para serem usadas no código
+// dependencies {}

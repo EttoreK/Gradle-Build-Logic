@@ -18,103 +18,96 @@ Provider<String> winDiscProv = project.providers.provider {
     propsLocal.getProperty('unidade.win', 'C')
 }
 Provider<RegularFile> jarFinal = buildDir.file(
-    nomeAppProv.flatMap { 
-        nome -> verNumProv.map { versao -> "distributions/${nome}-${versao}.jar" } 
-    }
+    nomeAppProv.flatMap { nome -> verNumProv.map { ver -> "distributions/${nome}-${ver}.jar" } }
 )
-boolean jarMagro = project.hasProperty('thin') && project.property('thin') == 'true' //-Pthin=true
+Provider<Boolean> jarMagroProv = project.providers.gradleProperty('thin').orElse(false) // -Pthin=true
 // Tarefas personalizadas
 tasks.named('jar') { enabled = false } // destivado para não gerar jar parciais
 // Configurado para alterar o nome do jar gerado e otimizar o tamanho do arquivo
-tasks.named('bootJar') { // -Pfat=true
-    enabled = !jarMagro
+tasks.named('bootJar') { // Compilador padrão
+    onlyIf{ !jarMagroProv.get() }
 
-    if (!jarMagro) {
-        mustRunAfter tasks.named('minWebJar')
-        inputs.files(tasks.named('minWebJar'))
+    mustRunAfter tasks.named('minWebJar')
+    inputs.files(tasks.named('minWebJar'))
 
-        archiveBaseName.set(nomeAppProv)
-        archiveVersion.set(verNumProv)
-        archiveClassifier.set('')
-        destinationDirectory.set(deployDirProv)
-        // Injeta as classes otimizadas pelo ProGuard
-        from(zipTree(buildDir.file('intermediates/minified-project.jar'))) {
-            into 'BOOT-INF/classes'
-        }
-        // Filtra o classpath, mantem todas os .jar, remove pastas locais que o ProGuard processou
-        classpath = classpath.filter { file ->
-            file.isFile() && 
-            file.name.endsWith('.jar') &&
-            !file.name.contains('spring-boot-jarmode-tools') &&
-            !file.name.contains('bib-lista') // remove o JAR duplicado
-        }
-        
-        exclude 'main/**', '**/classpath.idx', '**/layers.idx', '**/spring-boot-jarmode-tools-*.jar'
-        exclude 'BOOT-INF/classpath.idx', 'BOOT-INF/layers.idx'
-        entryCompression = ZipEntryCompression.DEFLATED
-        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    archiveBaseName.set(nomeAppProv)
+    archiveVersion.set(verNumProv)
+    archiveClassifier.set('')
+    destinationDirectory.set(deployDirProv)
+    // Injeta as classes otimizadas pelo ProGuard
+    from({ zipTree(buildDir.file('intermediates/minified-project.jar' )) }) {
+        into 'BOOT-INF/classes'
     }
+    // Filtra o classpath, mantem todas os .jar, remove pastas locais que o ProGuard processou
+    classpath = classpath.filter { file ->
+        file.isFile() && 
+        file.name.endsWith('.jar') &&
+        !file.name.contains('spring-boot-jarmode-tools') &&
+        !file.name.contains('bib-lista') // remove o JAR duplicado
+    }
+    
+    exclude 'main/**', '**/classpath.idx', '**/layers.idx', '**/spring-boot-jarmode-tools-*.jar'
+    exclude 'BOOT-INF/classpath.idx', 'BOOT-INF/layers.idx'
+    entryCompression = ZipEntryCompression.DEFLATED
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 // Configurado para alterar o nome do jar gerado e otimizar o tamanho dos arquivos
-tasks.register('orderJar', Jar) { //padrão
+tasks.register('orderJar', Jar) { // Compilador secundário -Pthin=true
     group = 'WebActions'
     description = 'Gera o JAR magro e copia as dependências para a pasta lib/'
-    enabled = jarMagro
+    onlyIf{ jarMagroProv.get() }
 
-    if (jarMagro) {
-        mustRunAfter tasks.named('minWebJar')
-        inputs.files(tasks.named('minWebJar'))
-        finalizedBy tasks.named('orderLibs')
-        
-        archiveBaseName.set(nomeAppProv)
-        archiveVersion.set(verNumProv)
-        archiveClassifier.set('')
-        destinationDirectory.set(deployDirProv)
-        // Puxa apenas o zip do ProGuard
-        from(zipTree(buildDir.file('intermediates/minified-project.jar')))
-        
-        manifest {
-            attributes(
-                'Main-Class': 'com.oboco.web.LoggerApplication', // Sua classe principal
-                'Class-Path': configurations.runtimeClasspath.files
+    mustRunAfter tasks.named('minWebJar')
+    inputs.files(tasks.named('minWebJar'))
+    finalizedBy tasks.named('orderLibs')
+    
+    archiveBaseName.set(nomeAppProv)
+    archiveVersion.set(verNumProv)
+    archiveClassifier.set('')
+    destinationDirectory.set(deployDirProv)
+    // Puxa apenas o zip do ProGuard
+    from({ zipTree(buildDir.file('intermediates/minified-project.jar')) })
+    
+    manifest {
+        attributes(
+            'Main-Class': 'com.oboco.web.LoggerApplication',
+            'Class-Path': project.providers.provider {
+                configurations.runtimeClasspath.files
                     .findAll { !it.name.startsWith('bib-lista') }
                     .collect { "lib/$it.name" }.join(' ')
-            )
-        }
+            }
+        )
     }
 }
-// A Cópia das Libs separada
+// Cria cópia das Libs separadamente
 tasks.register('orderLibs', Copy) {
     group = 'WebActions'
     description = 'Copia as dependências para a pasta lib/'
-    enabled = jarMagro
+    onlyIf{ jarMagroProv.get() }
 
-    if (jarMagro) {
-        mustRunAfter tasks.named('orderJar') // Obriga o JAR a nascer primeiro
-        
-        into deployDirProv.map { dir -> dir.dir('lib') }
-        from configurations.runtimeClasspath
-        exclude 'spring-boot-jarmode-tools-*.jar'
-    }
+    mustRunAfter tasks.named('orderJar') // obriga o JAR ser gerado primeiro
+    
+    into deployDirProv.map { dir -> dir.dir('lib') }
+    from configurations.runtimeClasspath
+    exclude 'spring-boot-jarmode-tools-*.jar'
 }
 // Apaga a pasta do inteira de build
 tasks.register('cleanWeb') {
     group = 'WebActions'
-    description = 'Constroi o JAR para o aplicativo java web'
+    description = 'Limpa o ambiente java web, para testes completos'
     outputs.upToDateWhen { false }
     finalizedBy tasks.named('clean')
 }
-
+// Minifica os jar gerados
 tasks.register('minWebJar', proguard.gradle.ProGuardTask) {
     mustRunAfter tasks.named('classes')
     inputs.files(tasks.named('classes'))
-    
     injars sourceSets.main.output, filter: '!main/' // pega as saídas compiladas
     // .jar temporário apenas com classes magras
     Provider<RegularFile> miniJarProv = buildDir.file('intermediates/minified-project.jar')
     outjars miniJarProv
     libraryjars "${System.getProperty('java.home')}/jmods"
-    // Referencia as libs externas mas não inclui no processo de shrinking
+    // Referencia as libs externas mas não inclui no processo de encolhimento
     libraryjars configurations.runtimeClasspath
     configuration file('proguard-web.pro')
 
@@ -124,29 +117,27 @@ tasks.register('minWebJar', proguard.gradle.ProGuardTask) {
         miniJar.parentFile.mkdirs()
     }
 }
-// Build sem testes
+// Compilação do aplicativo
 tasks.register('buildWeb') {
     group = 'WebActions'
-    if (jarMagro) {
-        mustRunAfter tasks.named('orderJar')
-        inputs.files(tasks.named('orderJar'))
-    } else {
-        mustRunAfter tasks.named('bootJar')
-        inputs.files(tasks.named('bootJar'))
-    }
+    mustRunAfter(jarMagroProv.map { eThin -> 
+        eThin ? tasks.named('orderJar') : tasks.named('bootJar') 
+    })
+    inputs.files(jarMagroProv.map { eThin -> 
+        eThin ? tasks.named('orderJar') : tasks.named('bootJar') 
+    })
     outputs.file jarFinal
 }
 // Roda em terminal externo
 tasks.register('runWeb') {
     group = 'WebActions'
-    description = 'Executa se o JAR já existente na pasta libs'
+    description = 'Executa se o JAR já existente na pasta lib'
     mustRunAfter assemble // só tenta rodar se o arquivo realmente existir
     inputs.files(tasks.named('buildWeb'))
     outputs.upToDateWhen { false }
 
     doFirst {
         File deployDir = deployDirProv.get().asFile
-        // Procura pelo JAR magro (que termina com -thin.jar)
         File jarArq = deployDir.listFiles()?.find { it.isFile() && it.name.endsWith('.jar') }
         
         if (jarArq == null || !jarArq.exists()) {
@@ -182,10 +173,9 @@ tasks.withType(Test).configureEach {
     systemProperty 'logging.level.root', 'WARN' // esconde os INFOs de inicio
 
     testLogging {
-        // Mostra no terminal os testes que passaram, foram pulados ou falharam
-        events 'passed', 'skipped', 'failed'
+        events 'passed', 'skipped', 'failed' // mostra no terminal os testes
         showStandardStreams = false // saída padrão do console
-        // Se der erro, mostra o rastro completo do problema
+        // Se der erro, mostra a origem do problema
         exceptionFormat = 'full'
         showCauses = true
         showStackTraces = true
@@ -208,10 +198,10 @@ tasks.withType(Test).configureEach {
                     | sucessos: ${result.successfulTestCount} |
                     | falhas: ${result.failedTestCount} |
                     | pulados: ${result.skippedTestCount} ||"""
-                println "\n======================================================================="
+                println '\n======================================================================='
                 println "RESULTADO DOS TESTES: ${result.resultType}"
                 println total.stripIndent().replaceAll('\n', '')
-                println "======================================================================="
+                println '======================================================================='
             }
         }
     })
@@ -242,11 +232,8 @@ tasks.register('webIco') {
         File pastaBuild = pngArq.parentFile
         if (!pastaBuild.exists()) pastaBuild.mkdirs()
         
-        String msysDir = winDiscProv.get() 
-        String magickCmd = eWindowsProv.get() ? "${msysDir}:/msys64/ucrt64/bin/magick.exe" : 'magick'
-        
         List<String> mesclaSVG = [
-            magickCmd,
+            eWindowsProv.get() ? "${winDiscProv.get()}:/msys64/ucrt64/bin/magick.exe" : 'magick',
             '-background', 'none',
             svgFundo.absolutePath, 
             svgFrente.absolutePath, 
@@ -257,7 +244,7 @@ tasks.register('webIco') {
         ]
         
         Process processo = mesclaSVG.execute()
-        processo.waitFor()
+        processo.waitForProcessOutput(System.out, System.err)
         if (processo.exitValue() != 0) {
             throw new GradleException('Falha ao gerar o ícone da Web')
         }
@@ -266,8 +253,7 @@ tasks.register('webIco') {
 // Evia a nova versão para o servidor
 tasks.register('submitWeb') {
     group = 'deploy actions'
-    description = 'Compila o app Web e envia o artefato magro (Thin JAR) para o servidor remoto'
-    jarMagro = true
+    description = 'Envia os arquivos para o servidor remoto'
     inputs.files(tasks.named('orderJar')) // usa os jar magros para ser mais rápido
     inputs.files(tasks.named('orderLibs'))
 
@@ -298,7 +284,7 @@ tasks.register('submitWeb') {
         if (procHash.exitValue() != 0) {
             throw new GradleException('' +
                 'Falha de conexão com o servidor ao ler os Hashes! \n' +
-                "Detalhes: ${stderr.toString().trim()}"
+                "Detalhes: ${erro.toString().trim()}"
             )
         }
 
@@ -317,31 +303,60 @@ tasks.register('submitWeb') {
 
         String erroHash = erro.toString().trim()
         if (erroHash && !erroHash.contains('Warning')) {
-            println "Aviso SSH (Hash): ${erroHash}"
+            println ">> ERRO: Aviso SSH (Hash): ${erroHash}"
         }
         // Compara os arquivos
         List<Map> arqsUpload = []
+        List<String> caminhosLocais = []
         dirBaseLocal.eachFileRecurse(groovy.io.FileType.FILES) { arquivo ->
-            // Pega o caminho relativo do arquivo em relação à pasta "libs" e converte para padrão Linux '/'
-            String caminhoRel = dirBaseLocal.toPath().relativize(arquivo.toPath()).toString().replace(File.separator, '/')
-            // Calcula o Hash MD5 local (lendo em blocos para não estourar a memória RAM)
+            // Pega o caminho relativo do arquivo em relação à 'lib' e converte pra padrão Linux '/'
+            String caminhoRel = dirBaseLocal.toPath().relativize(arquivo.toPath()).toString()
+            caminhoRel = caminhoRel.replace(File.separator, '/')
+            if (!caminhoRel.contains('/')) { caminhoRel = "${nomeAppProv.get()}.jar" } // sem versão
+            // Calcula o Hash MD5 local
+            caminhosLocais << caminhoRel
             java.security.MessageDigest md = java.security.MessageDigest.getInstance('MD5')
-            arquivo.eachByte(8192) { buffer, len -> 
-                md.update(buffer, 0, len) 
-            }
+            arquivo.eachByte(8192) { buffer, len -> md.update(buffer, 0, len) }
             String hashLocal = md.digest().encodeHex().toString()
-            // Se o hash remoto for diferente do local ou o arquivo não existir, vai para o upload
+            // Se o hash remoto for diferente do local ou o arquivo não existir, vai para a lista
             if (hashes[caminhoRel] != hashLocal) {
                 arqsUpload << [file: arquivo, path: caminhoRel]
             }
         }
+        // Descobre o que tem no as versões antigas do servidor
+        List<String> arqsDeletar = []
+        List<String> arqsFicar = [
+            "${nomeAppProv.get()}.jar".toString()
+        ]
+        hashes.keySet().each { caminhoRemoto ->
+            if (!caminhosLocais.contains(caminhoRemoto) && !arqsFicar.contains(caminhoRemoto)) {
+                arqsDeletar << caminhoRemoto
+            }
+        }
         // Sobe os arquivos
-        println "Estado: ${hashes.size()} arquivos no servidor."
-        
+        println ">> INFO: ${hashes.size()} arquivos no servidor."
+        // Deleta arquivos velhos
+        if (!arqsDeletar.isEmpty()) {
+            println ">> INFO: Encontrados ${arqsDeletar.size()} arquivos antigos. Limpando..."
+            // Monta os caminhos absolutos protegidos por aspas
+            String arquivosParaApagar = arqsDeletar.collect { "'${dir}/${it}'" }.join(' ')
+            
+            Process procRm = [
+                'ssh', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=no', "${dono}@${sede}", 
+                "rm -f ${arquivosParaApagar}"
+            ].execute()
+            procRm.waitForProcessOutput(System.out, System.err)
+            
+            if (procRm.exitValue() != 0) {
+                println '>> AVISO: Não foi possível deletar arquivos antigos. Veja as permissões.'
+            } else {
+                arqsDeletar.each { println ">> INFO [DELETADO] -> ${it}" }
+            }
+        }
         if (arqsUpload.isEmpty()) {
-            println "Nenhum arquivo foi modificado. Servidor já está 100% atualizado!"
+            println '>> INFO: Nenhum arquivo foi modificado. Servidor já está 100% atualizado!'
         } else {
-            println "Foram detectadas ${arqsUpload.size()} alterações. Iniciando transferências..."
+            println ">> INFO: ${arqsUpload.size()} alterações. Começando transferências..."
             // Garante que a pasta base existe no servidor
             Process procMkdir = [
                 'ssh', '-o', 'StrictHostKeyChecking=no', "${dono}@${sede}", "mkdir -p ${dir}/lib"
@@ -349,20 +364,22 @@ tasks.register('submitWeb') {
             procMkdir.waitForProcessOutput(System.out, System.err)
             // Faz o SCP pra cada arquivo
             arqsUpload.each { item ->
-                println "   -> Enviando: ${item.path} (${item.file.length() / 1024} KB)"
+                println ">> INFO: Enviando -> ${item.path} (${item.file.length() / 1024} KB)"
 
                 Process procScp = [
                     'scp', '-o', 'StrictHostKeyChecking=no', 
                     item.file.absolutePath, 
                     "${dono}@${sede}:${dir}/${item.path}"
                 ].execute()
-                // Imprime a saída padrão/erro do SCP direto no terminal do Gradle
+                // Saída padrão/erro do SCP direto no terminal
                 procScp.waitForProcessOutput(System.out, System.err)
                 
                 if (procScp.exitValue() != 0) {
-                    throw new GradleException("❌ Falha fatal ao transferir: ${item.path}")
+                    throw new GradleException("Falha ao transferir: ${item.path}")
                 }
             }
         }
     }
 }
+// Biblioteras para serem usadas no código
+// dependencies {}
