@@ -6,7 +6,7 @@ Object val = ver.valores
 Object xcc = val.xcodeConfig
 Object propsLocal = gradle.ext.propsLocal
 // Definição de provedores para acesso à valores de configuração e diretórios
-Provider<Directory> projDirProv = project.providers.provider { layout.projectDirectory }
+Provider<Directory> projDirProv = project.providers.provider { project.layout.projectDirectory }
 Provider<Boolean> eMacProv = providers.systemProperty('os.name').map { os ->
     os.toLowerCase().contains('mac')
 }
@@ -32,6 +32,9 @@ Provider<String> certificadoProv = project.providers.provider {
 Provider<String> nomePerfilProv = project.providers.provider {
     propsLocal.getProperty('apple.nomePerfil')
 }
+Provider<String> categoriaProv = project.providers.provider {
+    propsLocal.getProperty('apple.category', 'app-store-connect')
+}
 Provider<String> metodoProv = project.providers.provider {
     propsLocal.getProperty('apple.metodo', 'app-store-connect')
 }
@@ -53,22 +56,20 @@ Provider<String> vmAppDirProv = vmDirProv.map { String dir ->
 }
 if (!macDirProv){ throw new GradleException('Nenhum diretório configurado para MacOs') }
 // Se necessário encapsula o comando em uma chamada ssh para a VM
-Closure<List<String>> comandoRemoto = { List<String> cmdEntrada ->
-    if (eMacProv.get()) { return ['bash', '-c', cmdEntrada.join(' ')] } 
+Closure<List<String>> comandoRemoto = { List<String> cmds ->
+    if (eMacProv.get()) { return ['bash', '-c', cmds.join(' ')] } 
     else {
         if (!macDonoProv.isPresent() || !macSedeProv.isPresent()){
             throw new GradleException('Credenciais não configuradas pra MacOs')
         }
-        String vmDono = macDonoProv.get()
-        String vmSede = macSedeProv.get()
-        List<String> cmdRemoto = cmdEntrada.collect {arg -> 
+        List<String> cmdRemotos = cmds.collect {arg -> 
             if (!(val.cmd.vm.hasProperty(arg))) { return arg } 
             else { return val.cmd.vm.(arg).get() }
         }
         // O comando final a ser executado via SSH
-        String cmdSaida = "\"cd \'${vmAppDirProv.get()}\' && ${cmdRemoto.join(' ')}\""
-        
-        return ['ssh', "${vmDono}@${vmSede}", cmdSaida]
+        return [ 'ssh', "${macDonoProv.get()}@${macSedeProv.get()}", 
+            "\"cd \'${vmAppDirProv.get()}\' && ${cmdRemotos.join(' ')}\""
+        ]
     }
 }
 // API / Exportação das variáveis
@@ -93,6 +94,7 @@ project.ext.set('xcodeVars', [
     appleSenhaProv: appleSenhaProv,
     certificadoProv: certificadoProv,
     nomePerfilProv: nomePerfilProv,
+    categoriaProv: categoriaProv,
     metodoProv: metodoProv,
     simuladorUsualProv: simuladorUsualProv,
     versaoNumeroProv: versaoNumeroProv,

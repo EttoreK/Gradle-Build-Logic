@@ -5,19 +5,17 @@ plugins.apply(libs.plugins.buildLogicAndroidActions.get().getPluginId()) // aç�
 // Atalhos para libs.versions.toml para facilitar a leitura
 Object val = libs.versions.valores
 // Define o diretório de build
-Provider<String> appIdProv = providers.gradleProperty('appIdPacote')
 Provider<String> projNomeProv = providers.gradleProperty('projNome')
-Provider<String> appVerNumProv = providers.gradleProperty('appVerNum')
-Provider<String> appVerNomeProv = providers.gradleProperty('appVerNome')
-Provider<String> saidaDirProv = val.buildDir.android
-project.layout.buildDirectory.set(project.rootProject.layout.projectDirectory.dir(saidaDirProv))
+project.layout.buildDirectory.set(
+    project.rootProject.layout.projectDirectory.dir(val.buildDir.android)
+)
 // Definição das características do aplicativo
 android {
     // Configurações padrão para o aplicativo Android
     defaultConfig {
-        applicationId "${appIdProv.get()}.${projNomeProv.get().toLowerCase()}" // id na Play Store
-        versionCode appVerNumProv.get().toInteger() // versão do para Google Play Store
-        versionName appVerNomeProv.get() // nome da versão do código exibido aos usuários
+        applicationId providers.gradleProperty('appIdPacote').get() + '.' + projNomeProv.get() // id
+        versionCode providers.gradleProperty('appVerNum').get().toInteger() // versão Google Play
+        versionName providers.gradleProperty('appVerNome').get() // nome da ver exibido aos usuários
     }
 
     bundle {
@@ -63,12 +61,12 @@ android {
 }
 // Configuração para o nome do apk
 androidComponents {
-    onVariants(selector().all()) { variant ->
-        variant.outputs.forEach { output ->
+    onVariants(selector().all()) { variante -> // com.android.build.api.variant.Variant
+        variante.outputs.forEach { output -> // com.android.build.api.variant.VariantOutput
             // Só calcula isso no exato milissegundo em que for gerar o APK
             output.outputFileName.set(
-                output.versionCode.map { vCode ->
-                    "${projNomeProv.get()}-${vCode}-${variant.name}.apk"
+                output.versionCode.map { Integer versao ->
+                    "${projNomeProv.get()}-${versao}-${variante.name}.apk"
                 }
             )
         }
@@ -90,5 +88,5 @@ dependencies {
     testImplementation libs.mockitoCore // para usar o mockito
     testImplementation libs.mockitoJunit // para mockar métodos estáticos
     testRuntimeOnly libs.junitEngine // engine do Junit 5
-    testRuntimeOnly libs.junitPlt // talvez redundante, plataforma do junit 5
+    testRuntimeOnly libs.junitPlt // necessário
 }

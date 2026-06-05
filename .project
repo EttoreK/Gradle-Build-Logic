@@ -20,6 +20,13 @@
 		<nature>org.eclipse.jdt.core.javanature</nature>
 		<nature>org.eclipse.buildship.core.gradleprojectnature</nature>
 	</natures>
+	<linkedResources>
+		<link>
+			<name>adapter-src</name>
+			<type>2</type>
+			<location>D:/Logger/App/Logger/build/build-logic/groovy-dsl-plugins/output/adapter-src</location>
+		</link>
+	</linkedResources>
 	<filteredResources>
 		<filter>
 			<id>1779916415704</id>

@@ -6,21 +6,19 @@ Object propsLocal = gradle.ext.propsLocal
 Provider<Boolean> eWindowsProv = providers.systemProperty('os.name').map { os ->
     os.toLowerCase().contains('windows')
 }
-Provider<Directory> buildDir = layout.buildDirectory
-Provider<Directory> deployDirProv = buildDir.dir('distributions')
+Provider<Directory> buildDirProv = project.layout.buildDirectory
+Provider<Directory> deployDirProv = buildDirProv.dir('distributions')
 Provider<String> nomeAppProv = providers.gradleProperty('projNome')
 Provider<String> espNomeProv = providers.gradleProperty('espolioDir').orElse('espolio')
 Provider<String> verNumProv = providers.gradleProperty('appVerNum')
-Provider<String> srvDonoProv = project.providers.provider { propsLocal.getProperty('srv.dono') }
-Provider<String> srvSedeProv = project.providers.provider { propsLocal.getProperty('srv.sede') }
-Provider<String> srvDirProv = project.providers.provider { propsLocal.getProperty('srv.dir') }
-Provider<String> winDiscProv = project.providers.provider {
-    propsLocal.getProperty('unidade.win', 'C')
-}
-Provider<RegularFile> jarFinal = buildDir.file(
-    nomeAppProv.flatMap { nome -> verNumProv.map { ver -> "distributions/${nome}-${ver}.jar" } }
-)
-Provider<Boolean> jarMagroProv = project.providers.gradleProperty('thin').orElse(false) // -Pthin=true
+Provider<Boolean> jarMagroProv = project.providers.gradleProperty('thin')
+    .map { String valor -> valor.toBoolean() } // Se o -Pthin existir, converte o texto para Boolean
+    .orElse(
+        project.providers.provider {
+            // Se o -Pthin NÃO existir, verifica se a sua tarefa chamou o build
+            gradle.startParameter.taskNames.contains('submitWeb')
+        }
+    ) // -Pthin=true
 // Tarefas personalizadas
 tasks.named('jar') { enabled = false } // destivado para não gerar jar parciais
 // Configurado para alterar o nome do jar gerado e otimizar o tamanho do arquivo
@@ -35,15 +33,15 @@ tasks.named('bootJar') { // Compilador padrão
     archiveClassifier.set('')
     destinationDirectory.set(deployDirProv)
     // Injeta as classes otimizadas pelo ProGuard
-    from({ zipTree(buildDir.file('intermediates/minified-project.jar' )) }) {
+    from({ zipTree(buildDirProv.file('intermediates/minified-project.jar' )) }) {
         into 'BOOT-INF/classes'
     }
     // Filtra o classpath, mantem todas os .jar, remove pastas locais que o ProGuard processou
-    classpath = classpath.filter { file ->
-        file.isFile() && 
-        file.name.endsWith('.jar') &&
-        !file.name.contains('spring-boot-jarmode-tools') &&
-        !file.name.contains('bib-lista') // remove o JAR duplicado
+    classpath = classpath.filter { File arq ->
+        arq.isFile() && 
+        arq.name.endsWith('.jar') &&
+        !arq.name.contains('spring-boot-jarmode-tools') &&
+        !arq.name.contains('bib-lista') // remove o JAR duplicado
     }
     
     exclude 'main/**', '**/classpath.idx', '**/layers.idx', '**/spring-boot-jarmode-tools-*.jar'
@@ -66,7 +64,7 @@ tasks.register('orderJar', Jar) { // Compilador secundário -Pthin=true
     archiveClassifier.set('')
     destinationDirectory.set(deployDirProv)
     // Puxa apenas o zip do ProGuard
-    from({ zipTree(buildDir.file('intermediates/minified-project.jar')) })
+    from({ zipTree(buildDirProv.file('intermediates/minified-project.jar')) })
     
     manifest {
         attributes(
@@ -74,7 +72,7 @@ tasks.register('orderJar', Jar) { // Compilador secundário -Pthin=true
             'Class-Path': project.providers.provider {
                 configurations.runtimeClasspath.files
                     .findAll { !it.name.startsWith('bib-lista') }
-                    .collect { "lib/$it.name" }.join(' ')
+                    .collect { "lib/${it.name}" }.join(' ')
             }
         )
     }
@@ -87,7 +85,7 @@ tasks.register('orderLibs', Copy) {
 
     mustRunAfter tasks.named('orderJar') // obriga o JAR ser gerado primeiro
     
-    into deployDirProv.map { dir -> dir.dir('lib') }
+    into deployDirProv.map { Directory deployDir -> deployDir.dir('lib') }
     from configurations.runtimeClasspath
     exclude 'spring-boot-jarmode-tools-*.jar'
 }
@@ -104,7 +102,7 @@ tasks.register('minWebJar', proguard.gradle.ProGuardTask) {
     inputs.files(tasks.named('classes'))
     injars sourceSets.main.output, filter: '!main/' // pega as saídas compiladas
     // .jar temporário apenas com classes magras
-    Provider<RegularFile> miniJarProv = buildDir.file('intermediates/minified-project.jar')
+    Provider<RegularFile> miniJarProv = buildDirProv.file('intermediates/minified-project.jar')
     outjars miniJarProv
     libraryjars "${System.getProperty('java.home')}/jmods"
     // Referencia as libs externas mas não inclui no processo de encolhimento
@@ -120,16 +118,18 @@ tasks.register('minWebJar', proguard.gradle.ProGuardTask) {
 // Compilação do aplicativo
 tasks.register('buildWeb') {
     group = 'WebActions'
-    mustRunAfter(jarMagroProv.map { eThin -> 
+    mustRunAfter(jarMagroProv.map { boolean eThin -> 
         eThin ? tasks.named('orderJar') : tasks.named('bootJar') 
     })
-    inputs.files(jarMagroProv.map { eThin -> 
+    inputs.files(jarMagroProv.map { boolean eThin -> 
         eThin ? tasks.named('orderJar') : tasks.named('bootJar') 
     })
-    outputs.file jarFinal
+    outputs.file(buildDirProv.file(nomeAppProv.flatMap 
+        { String nome -> verNumProv.map { String ver -> "distributions/${nome}-${ver}.jar" } }
+    ))
 }
 // Roda em terminal externo
-tasks.register('runWeb') {
+tasks.register('runWeb') { // http://localhost:8080
     group = 'WebActions'
     description = 'Executa se o JAR já existente na pasta lib'
     mustRunAfter assemble // só tenta rodar se o arquivo realmente existir
@@ -193,14 +193,13 @@ tasks.withType(Test).configureEach {
             org.gradle.api.tasks.testing.TestResult result) {
             // Garante que é a execução raiz de todos os testes
             if (!desc.parent) { 
-                String total = """\
+                println '\n======================================================================='
+                println "RESULTADO DOS TESTES: ${result.resultType}"
+                println """\
                     || Total de testes: ${result.testCount} |
                     | sucessos: ${result.successfulTestCount} |
                     | falhas: ${result.failedTestCount} |
-                    | pulados: ${result.skippedTestCount} ||"""
-                println '\n======================================================================='
-                println "RESULTADO DOS TESTES: ${result.resultType}"
-                println total.stripIndent().replaceAll('\n', '')
+                    | pulados: ${result.skippedTestCount} ||""".stripIndent().replaceAll('\n', '')
                 println '======================================================================='
             }
         }
@@ -211,39 +210,39 @@ tasks.register('webIco') {
     group = 'Web Actions'
     description = 'Gera o icone.png para a aplicação Web'
 
-    Provider<RegularFile> svgFundoProv = espNomeProv.map { espDir ->
+    Provider<RegularFile> fundoSvgProv = espNomeProv.map { String espDir ->
         project.rootProject.layout.projectDirectory.file("${espDir}/icones/appBackground.svg")
     }
-    Provider<RegularFile> svgFrenteProv = espNomeProv.map { espDir ->
+    Provider<RegularFile> frenteSvgProv = espNomeProv.map { String espDir ->
         project.rootProject.layout.projectDirectory.file("${espDir}/icones/appForeground.svg")
     }
-    Provider<RegularFile> pngArqProv = buildDir.file('generated/webIcoRes/static/favicon.png')
+    Provider<RegularFile> pngArqProv = buildDirProv.file('generated/webIcoRes/static/favicon.png')
     
-    inputs.files(svgFundoProv, svgFrenteProv)
+    inputs.files(fundoSvgProv, frenteSvgProv)
     outputs.file pngArqProv
     
     doLast {
-        File svgFundo = svgFundoProv.get().asFile
-        File svgFrente = svgFrenteProv.get().asFile
+        File fundoSVG = fundoSvgProv.get().asFile
+        File frenteSVG = frenteSvgProv.get().asFile
         File pngArq = pngArqProv.get().asFile
-        if (!svgFundo.exists()) throw new GradleException('Faltou o SVG de Fundo!')
-        if (!svgFrente.exists()) throw new GradleException('Faltou o SVG de Frente!')
+        if (!fundoSVG.exists()) throw new GradleException('Faltou o SVG de Fundo!')
+        if (!frenteSVG.exists()) throw new GradleException('Faltou o SVG de Frente!')
         
-        File pastaBuild = pngArq.parentFile
-        if (!pastaBuild.exists()) pastaBuild.mkdirs()
+        File buildDir = pngArq.parentFile
+        if (!buildDir.exists()) buildDir.mkdirs()
         
-        List<String> mesclaSVG = [
-            eWindowsProv.get() ? "${winDiscProv.get()}:/msys64/ucrt64/bin/magick.exe" : 'magick',
+        Process processo = [
+            eWindowsProv.get() 
+            ? "${propsLocal.getProperty('unidade.win', 'C')}:/msys64/ucrt64/bin/magick.exe" 
+            : 'magick',
             '-background', 'none',
-            svgFundo.absolutePath, 
-            svgFrente.absolutePath, 
+            fundoSVG.absolutePath, 
+            frenteSVG.absolutePath, 
             '-gravity', 'center', 
             '-composite', 
             '-resize', '2048x2048', 
             pngArq.absolutePath 
-        ]
-        
-        Process processo = mesclaSVG.execute()
+        ].execute()
         processo.waitForProcessOutput(System.out, System.err)
         if (processo.exitValue() != 0) {
             throw new GradleException('Falha ao gerar o ícone da Web')
@@ -254,129 +253,144 @@ tasks.register('webIco') {
 tasks.register('submitWeb') {
     group = 'deploy actions'
     description = 'Envia os arquivos para o servidor remoto'
+    mustRunAfter(tasks.named('orderJar'))
+    mustRunAfter(tasks.named('orderLibs'))
     inputs.files(tasks.named('orderJar')) // usa os jar magros para ser mais rápido
     inputs.files(tasks.named('orderLibs'))
 
     doLast {
-        String dono = srvDonoProv.get()
-        String sede = srvSedeProv.get()
-        String dir = srvDirProv.get()
+        String dono = propsLocal.getProperty('srv.dono')
+        String sede = propsLocal.getProperty('srv.sede')
+        String dir = propsLocal.getProperty('srv.dir')
+        String servico = propsLocal.getProperty('srv.servico')
+        String appJar = nomeAppProv.get().toString().toLowerCase() + '.jar'
 
         if (!dono || !sede || !dir) {
             throw new GradleException('Faltam variáveis do servidor no local.properties!')
         }
 
-        File dirBaseLocal = deployDirProv.get().asFile
-        if (!dirBaseLocal.exists()) {
-            throw new GradleException("A pasta base de compilação (${dirBaseLocal}) não existe!")
+        File baseLocaldir = deployDirProv.get().asFile
+        if (!baseLocaldir.exists()) {
+            throw new GradleException("A pasta base de compilação (${baseLocaldir}) não existe!")
         }
 
-        String comandoFind = "cd ${dir} 2>/dev/null && find . -type f -exec md5sum {} + || true"
-        Map<String, String> hashes = [:]
-        ByteArrayOutputStream saida = new ByteArrayOutputStream()
-        ByteArrayOutputStream erro = new ByteArrayOutputStream()
+        Map<String, String> hashesMap = [:]
+        ByteArrayOutputStream saidaStd = new ByteArrayOutputStream()
+        ByteArrayOutputStream erroStd = new ByteArrayOutputStream()
         
-        Process procHash = [
-            'ssh', '-o', 'StrictHostKeyChecking=no', "${dono}@${sede}", comandoFind
+        Process processoHash = [
+            'ssh', '-o', 'StrictHostKeyChecking=no', "${dono}@${sede}", 
+            "cd ${dir} 2>/dev/null && find . -type f -exec md5sum {} + || true"
         ].execute()
-        procHash.waitForProcessOutput(saida, erro)
+        processoHash.waitForProcessOutput(saidaStd, erroStd)
         
-        if (procHash.exitValue() != 0) {
+        if (processoHash.exitValue() != 0) {
             throw new GradleException('' +
                 'Falha de conexão com o servidor ao ler os Hashes! \n' +
-                "Detalhes: ${erro.toString().trim()}"
+                "Detalhes: ${erroStd.toString().trim()}"
             )
         }
 
-        saida.toString().eachLine { linha ->
+        saidaStd.toString().eachLine { String linha ->
             linha = linha.trim()
             if (linha && linha.contains('  ')) {
-                def partes = linha.split('  ')
+                List<String> partes = linha.split('  ')
                 if (partes.size() >= 2) {
-                    String hash = partes[0].trim()
-                    // Remove o './' que o comando 'find' do Linux coloca no começo do caminho
-                    String caminhoRelativo = partes[1].trim().replaceFirst("^\\./", "")
-                    hashes[caminhoRelativo] = hash
+                    // Remove o './' que o comando 'find' do Linux coloca no começo do caminho 
+                    hashesMap[partes[1].trim().replaceFirst('^\\./', '')] = partes[0].trim()
                 }
             }
         }
 
-        String erroHash = erro.toString().trim()
+        String erroHash = erroStd.toString().trim()
         if (erroHash && !erroHash.contains('Warning')) {
             println ">> ERRO: Aviso SSH (Hash): ${erroHash}"
         }
         // Compara os arquivos
-        List<Map> arqsUpload = []
+        List<Map> arqsMap = []
         List<String> caminhosLocais = []
-        dirBaseLocal.eachFileRecurse(groovy.io.FileType.FILES) { arquivo ->
+        baseLocaldir.eachFileRecurse(groovy.io.FileType.FILES) { File arquivo ->
             // Pega o caminho relativo do arquivo em relação à 'lib' e converte pra padrão Linux '/'
-            String caminhoRel = dirBaseLocal.toPath().relativize(arquivo.toPath()).toString()
+            String caminhoRel = baseLocaldir.toPath().relativize(arquivo.toPath()).toString()
             caminhoRel = caminhoRel.replace(File.separator, '/')
-            if (!caminhoRel.contains('/')) { caminhoRel = "${nomeAppProv.get()}.jar" } // sem versão
+            if (!caminhoRel.contains('/')) { caminhoRel = appJar } // sem versão
             // Calcula o Hash MD5 local
             caminhosLocais << caminhoRel
             java.security.MessageDigest md = java.security.MessageDigest.getInstance('MD5')
-            arquivo.eachByte(8192) { buffer, len -> md.update(buffer, 0, len) }
-            String hashLocal = md.digest().encodeHex().toString()
+            arquivo.eachByte(8192) { byte[] buffer, Integer len -> md.update(buffer, 0, len) }
             // Se o hash remoto for diferente do local ou o arquivo não existir, vai para a lista
-            if (hashes[caminhoRel] != hashLocal) {
-                arqsUpload << [file: arquivo, path: caminhoRel]
+            if (hashesMap[caminhoRel] != md.digest().encodeHex().toString()) {
+                arqsMap << [arq: arquivo, dir: caminhoRel]
             }
         }
         // Descobre o que tem no as versões antigas do servidor
-        List<String> arqsDeletar = []
-        List<String> arqsFicar = [
-            "${nomeAppProv.get()}.jar".toString()
+        List<String> deletarArqs = []
+        List<String> manterArqs = [
+            appJar
         ]
-        hashes.keySet().each { caminhoRemoto ->
-            if (!caminhosLocais.contains(caminhoRemoto) && !arqsFicar.contains(caminhoRemoto)) {
-                arqsDeletar << caminhoRemoto
+        hashesMap.keySet().each { String caminhoRemoto ->
+            if (!caminhosLocais.contains(caminhoRemoto) && !manterArqs.contains(caminhoRemoto)) {
+                deletarArqs << caminhoRemoto
             }
         }
         // Sobe os arquivos
-        println ">> INFO: ${hashes.size()} arquivos no servidor."
+        println ">> INFO: ${hashesMap.size()} arquivos no servidor."
         // Deleta arquivos velhos
-        if (!arqsDeletar.isEmpty()) {
-            println ">> INFO: Encontrados ${arqsDeletar.size()} arquivos antigos. Limpando..."
+        if (!deletarArqs.isEmpty()) {
+            println ">> INFO: Encontrados ${deletarArqs.size()} arquivos antigos. Limpando..."
             // Monta os caminhos absolutos protegidos por aspas
-            String arquivosParaApagar = arqsDeletar.collect { "'${dir}/${it}'" }.join(' ')
-            
-            Process procRm = [
+            Process processoRemove = [
                 'ssh', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=no', "${dono}@${sede}", 
-                "rm -f ${arquivosParaApagar}"
+                "rm -f ${deletarArqs.collect { "\'${dir}/${it}\'" }.join(' ')}"
             ].execute()
-            procRm.waitForProcessOutput(System.out, System.err)
+            processoRemove.waitForProcessOutput(System.out, System.err)
             
-            if (procRm.exitValue() != 0) {
+            if (processoRemove.exitValue() != 0) {
                 println '>> AVISO: Não foi possível deletar arquivos antigos. Veja as permissões.'
             } else {
-                arqsDeletar.each { println ">> INFO [DELETADO] -> ${it}" }
+                deletarArqs.each { println ">> INFO [DELETADO] -> ${it}" }
             }
         }
-        if (arqsUpload.isEmpty()) {
+
+        if (arqsMap.isEmpty()) {
             println '>> INFO: Nenhum arquivo foi modificado. Servidor já está 100% atualizado!'
         } else {
-            println ">> INFO: ${arqsUpload.size()} alterações. Começando transferências..."
+            println ">> INFO: ${arqsMap.size()} alterações. Começando transferências..."
             // Garante que a pasta base existe no servidor
-            Process procMkdir = [
+            Process processoMkdir = [
                 'ssh', '-o', 'StrictHostKeyChecking=no', "${dono}@${sede}", "mkdir -p ${dir}/lib"
             ].execute()
-            procMkdir.waitForProcessOutput(System.out, System.err)
+            processoMkdir.waitForProcessOutput(System.out, System.err)
             // Faz o SCP pra cada arquivo
-            arqsUpload.each { item ->
-                println ">> INFO: Enviando -> ${item.path} (${item.file.length() / 1024} KB)"
+            arqsMap.each { Map mapa ->
+                println ">> INFO: Enviando -> ${mapa.dir} (${mapa.arq.length() / 1024} KB)"
 
                 Process procScp = [
                     'scp', '-o', 'StrictHostKeyChecking=no', 
-                    item.file.absolutePath, 
-                    "${dono}@${sede}:${dir}/${item.path}"
+                    mapa.arq.absolutePath, 
+                    "${dono}@${sede}:${dir}/${mapa.dir}"
                 ].execute()
                 // Saída padrão/erro do SCP direto no terminal
                 procScp.waitForProcessOutput(System.out, System.err)
                 
                 if (procScp.exitValue() != 0) {
-                    throw new GradleException("Falha ao transferir: ${item.path}")
+                    throw new GradleException("Falha ao transferir: ${mapa.dir}")
                 }
+            }
+        }
+
+        if (servico) {
+            println ">> INFO: Reiniciando o serviço '${servico}' no servidor..."
+            Process processoReinicio = [
+                'ssh', '-o', 'StrictHostKeyChecking=no', "${dono}@${sede}", 
+                "systemctl restart ${servico}" 
+            ].execute()
+            processoReinicio.waitForProcessOutput(System.out, System.err)
+            
+            if (processoReinicio.exitValue() != 0) {
+                throw new GradleException("Falha ao reiniciar o serviço ${servico}.")
+            } else {
+                println ">> INFO: Fim do Deploy e serviço reiniciado!"
             }
         }
     }

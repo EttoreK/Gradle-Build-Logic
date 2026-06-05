@@ -1,10 +1,9 @@
 // Declaração dos plugins
 // plugins {}
 // Define o diretório de build usando o nome dinâmico da pasta
-Provider<String> appNomeProv = providers.gradleProperty('projNome')
-Provider<String> espNomeProv = providers.gradleProperty('espolioDir').orElse('espolio')
-Provider<String> saidaDirProv = libs.versions.valores.buildDir.web
-project.layout.buildDirectory.set(project.rootProject.layout.projectDirectory.dir(saidaDirProv))
+project.layout.buildDirectory.set(
+    project.rootProject.layout.projectDirectory.dir(libs.versions.valores.buildDir.web)
+)
 // Configurações do Spring e exclusão de bibliotecas padrão
 project.configurations {
     // Remove o todas as dependências de uma vez
@@ -29,7 +28,9 @@ project.sourceSets {
         resources {
             srcDirs += ['src/main/resources'] // mantém os recursos padrões
             // inclui o conteúdo da pasta espolio no Classpath
-            srcDirs += [project.rootProject.layout.projectDirectory.dir(espNomeProv)]
+            srcDirs += [project.rootProject.layout.projectDirectory.dir(
+                providers.gradleProperty('espolioDir').orElse('espolio')
+            )]
         }
     }
 }
@@ -43,7 +44,7 @@ project.tasks.register('posBuildWeb') {
         'compileClasspath'
     ).flatMap { it.elements }
     Provider<RegularFile> classpathArqProv = project.providers.provider { 
-        layout.projectDirectory.file('.classpath') 
+        project.layout.projectDirectory.file('.classpath') 
     }
 
     inputs.files(compDepProv)
@@ -57,9 +58,9 @@ project.tasks.register('posBuildWeb') {
             StringBuilder novasBib = new StringBuilder()
             
             List<String> linhasLimpas = []
-            xmlArq.eachLine { linha ->
-                if (linha.contains('kind="lib"')) {
-                    java.util.regex.Matcher matcher = linha =~ /path="([^"]+)"/
+            xmlArq.eachLine { String linha ->
+                if (linha.contains('kind=\"lib\"')) {
+                    java.util.regex.Matcher matcher = (linha =~ /path="([^"]+)"/)
                     if (matcher.find()) {
                         File arquivoNoDisco = new File(matcher.group(1))
                         if (arquivoNoDisco.exists()) {
@@ -74,13 +75,9 @@ project.tasks.register('posBuildWeb') {
             }
             xmlArq = linhasLimpas.join('\n')
 
-            compDepProv.get().each { File loc ->
-                File arquivo = loc.asFile
-                String caminho = arquivo.absolutePath.replace(File.separator, '/')
-                boolean eJar = caminho.endsWith('.jar')
-                boolean jaExiste = xmlArq.contains("path=\"${caminho}\"")
-                
-                if (eJar && !jaExiste) {
+            compDepProv.get().each { File arq ->
+                String caminho = arq.asFile.absolutePath.replace(File.separator, '/')
+                if (caminho.endsWith('.jar') && !xmlArq.contains("path=\"${caminho}\"")) {
                     novasBib.append("    <classpathentry kind=\"lib\" path=\"${caminho}\"/>\n")
                 }
             }
@@ -90,7 +87,7 @@ project.tasks.register('posBuildWeb') {
                     xmlArq = xmlArq.replace('</classpath>', novasBib.toString() + '</classpath>')
                 }
                 classpathArq.text = xmlArq
-                println ">> INFO: .classpath de ${appNomeProv.get()} (Web) atualizado."
+                println ">> INFO: .classpath de ${providers.gradleProperty('projNome')} atualizado."
             }
         }
     }

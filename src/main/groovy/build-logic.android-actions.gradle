@@ -3,29 +3,6 @@
 // Atalhos para facilitar a leitura
 Object val = libs.versions.valores
 Object propsLocal = gradle.ext.propsLocal
-// Providers para valores futuros
-Provider<String> appIdProv = providers.gradleProperty('appIdPacote')
-Provider<String> projNomeProv = providers.gradleProperty('projNome')
-Provider<String> simuladorUsualProv = project.providers.provider {
-    propsLocal.getProperty('simulador.android')
-}
-Provider<String> winDiscProv = project.providers.provider { 
-    propsLocal.getProperty('unidade.win', 'C') 
-}
-Provider<String> simuladorProv = ( providers.exec {
-        commandLine 'emulator', '-list-avds'
-        ignoreExitValue = true 
-    }.standardOutput.asText.map { saida ->
-        String texto = saida.trim()
-        // Se a saída estiver vazia o comando falhou silenciosamente ou não há AVDs
-        if (texto.isEmpty()) {
-            println 'AVISO: Nenhum AVD encontrado ou erro no comando. Usando padrão.'
-            return null // retornar null dispara o .orElse() abaixo
-        }
-        // Pega a primeira linha, primeiro simulador encontrado
-        return texto.lines().findFirst().map { it.trim() }.orElse(null)
-    }.orElse(simuladorUsualProv)
-)
 // Limpa todo o diretório de build
 tasks.register('cleanAndroid') {
     group = 'WebActions'
@@ -40,15 +17,24 @@ tasks.register('posBuild') {
     mustRunAfter tasks.named('buildAndroid')
     // captura todas as dependências de compilação Bibliotecas e Subprojetos
     Provider<List<RegularFile>> bootClasspathProv = androidComponents.sdkComponents.bootClasspath
-    Provider<Directory> buildDirProv = layout.buildDirectory
+    Provider<Directory> buildDirProv = project.layout.buildDirectory
     Provider<RegularFile> classpathArqProv = project.providers.provider { 
-        layout.projectDirectory.file('.classpath') 
+        project.layout.projectDirectory.file('.classpath') 
     }
-    Provider<Set<FileSystemLocation>> compDepProv = configurations.named(
-        'debugCompileClasspath'
-    ).flatMap { it.elements }
 
-    inputs.files compDepProv
+    Closure<Provider<Set<FileSystemLocation>>> pegaDeps = { String nomeConfig ->
+        return configurations.named(nomeConfig).flatMap { Configuration config ->
+            config.incoming.artifactView { attributes {
+                attribute(Attribute.of('artifactType', String), 'android-classes-jar')
+            } }.files.elements
+        }
+    }
+
+    Provider<Set<FileSystemLocation>> compDepProv = pegaDeps('debugCompileClasspath')
+    Provider<Set<FileSystemLocation>> testDepProv = pegaDeps('debugUnitTestCompileClasspath')
+    Provider<Set<FileSystemLocation>> anddTestDepProv = pegaDeps('debugAndroidTestCompileClasspath')
+
+    inputs.files(compDepProv, testDepProv, anddTestDepProv)
     inputs.file(classpathArqProv).optional()
 
     doLast {
@@ -58,15 +44,15 @@ tasks.register('posBuild') {
             List<RegularFile> bootArqs = bootClasspathProv.get()
             String compDir = buildDirProv.get().asFile.absolutePath.replace(File.separator,'/')
             String xmlArq = classpathArq.text
-            String rDir = String.join('', compDir, '/intermediates/',
-                'compile_and_runtime_not_namespaced_r_class_jar/debug/processDebugResources/R.jar'
-            )
+            // String rDir = String.join('', compDir, '/intermediates/',
+            //     'compile_and_runtime_not_namespaced_r_class_jar/debug/processDebugResources/R.jar'
+            // )
             StringBuilder novasBib = new StringBuilder()
             // Lê o arquivo linha por linha e remove referências a arquivos que foram deletados
             List<String> linhasLimpas = []
-            xmlArq.eachLine { linha ->
-                if (linha.contains('kind="lib"')) {
-                    java.util.regex.Matcher matcher = linha =~ /path="([^"]+)"/
+            xmlArq.eachLine { String linha ->
+                if (linha.contains('kind=\"lib\"')) {
+                    java.util.regex.Matcher matcher = (linha =~ /path="([^"]+)"/)
                     if (matcher.find()) {
                         // Só mantém a linha se o arquivo realmente existir
                         if (new File(matcher.group(1)).exists()) {
@@ -85,23 +71,25 @@ tasks.register('posBuild') {
                 novasBib.append("    <classpathentry kind=\"src\" path=\"src/main/java\"/>\n")
             }
             // Injeção de pasta de código testes
-            if (!xmlArq.contains("path=\"src/test/java\"")) {
+            if (!xmlArq.contains('path=\"src/test/java\"')) {
                 novasBib.append(
-                    "    <classpathentry kind=\"src\" path=\"src/test/java\">\n" +
-                    "        <attributes>\n" +
-                    "            <attribute name=\"test\" value=\"true\"/>\n" +
-                    "        </attributes>\n" +
-                    "    </classpathentry>\n"
+                    '    <classpathentry kind=\"src\" output=\"bin/test\" ' + 
+                    'path=\"src/test/java\">\n' +
+                    '        <attributes>\n' +
+                    '            <attribute name=\"test\" value=\"true\"/>\n' +
+                    '        </attributes>\n' +
+                    '    </classpathentry>\n'
                 )
             }
             // Injeção de pasta de código androidTest
-            if (!xmlArq.contains("path=\"src/androidTest/java\"")) {
+            if (!xmlArq.contains('path=\"src/androidTest/java\"')) {
                 novasBib.append(
-                    "    <classpathentry kind=\"src\" path=\"src/androidTest/java\">\n" +
-                    "        <attributes>\n" +
-                    "            <attribute name=\"test\" value=\"true\"/>\n" +
-                    "        </attributes>\n" +
-                    "    </classpathentry>\n"
+                    '    <classpathentry kind=\"src\" output=\"bin/test\" ' +
+                    'path=\"src/androidTest/java\">\n' +
+                    '        <attributes>\n' +
+                    '            <attribute name=\"test\" value=\"true\"/>\n' +
+                    '        </attributes>\n' +
+                    '    </classpathentry>\n'
                 )
             }
 
@@ -113,29 +101,28 @@ tasks.register('posBuild') {
                 }
             }
             
-            if (!xmlArq.contains(rDir)) {
-                novasBib.append("    <classpathentry kind=\"lib\" path=\"${rDir}\"/>\n")
-            }
+            // if (!xmlArq.contains(rDir)) {
+            //     novasBib.append("    <classpathentry kind=\"lib\" path=\"${rDir}\"/>\n")
+            // }
             // Pega o JAR de qualquer outra lib que não virou AAR
-            compDepProv.get().each { loc ->
-                File arquivo = loc.asFile
-                String caminho = arquivo.absolutePath.replace(File.separator, '/')
-                // Regras de filtragem para não duplicar
-                boolean eJar = caminho.endsWith('.jar')
-                boolean jaExiste = xmlArq.contains("path=\"${caminho}\"")
+            Set<File> dependencias = new LinkedHashSet<>()
+            compDepProv.get().each { dependencias.add(it.asFile) }
+            testDepProv.get().each { dependencias.add(it.asFile) }
+            anddTestDepProv.get().each { dependencias.add(it.asFile) }
+            dependencias.each { File arq ->
+                String caminho = arq.absolutePath.replace(File.separator, '/')
                 // Filtra o que já é tratado pela pasta aarLibraries para evitar duplicar
-                boolean estaNaPastaAarLib = caminho.contains('/aarLibraries/') 
-                
-                if (eJar && !jaExiste && !estaNaPastaAarLib) {
+                if (caminho.endsWith('.jar') && !xmlArq.contains("path=\"${caminho}\"") 
+                    && !caminho.contains('/aarLibraries/')) {
                     novasBib.append("    <classpathentry kind=\"lib\" path=\"${caminho}\"/>\n")
                 }
             }
             // Loop para encontrar todos os .jar de aarLibraries
             File aarFolder = new File(compDir + '/aarLibraries')
             if (aarFolder.exists()) {
-                aarFolder.eachFile { arquivo ->
-                    if (arquivo.name.endsWith('.jar')) {
-                        String jarPath = arquivo.absolutePath.replace(File.separator, '/')
+                aarFolder.eachFile { File arq ->
+                    if (arq.name.endsWith('.jar')) {
+                        String jarPath = arq.absolutePath.replace(File.separator, '/')
                         if (!xmlArq.contains("path=\"${jarPath}\"")) {
                             novasBib.append(
                                 "    <classpathentry kind=\"lib\" path=\"${jarPath}\"/>\n"
@@ -169,6 +156,9 @@ tasks.register('runSimulatorAndroid', Exec){
     mustRunAfter tasks.named('installDebug')
     outputs.upToDateWhen { false }
 
+    Provider<String> projNomeProv = providers.gradleProperty('projNome')
+    Provider<String> appIdProv = providers.gradleProperty('appIdPacote')
+
     doFirst { 
         String pacote = appIdProv.get() + '.'
         String app = projNomeProv.get().toLowerCase()
@@ -183,6 +173,21 @@ tasks.register('runAndroid', Exec) {
     finalizedBy tasks.named('runSimulatorAndroid')
     inputs.files(tasks.named('buildAndroid'))
     outputs.upToDateWhen { false } // sempre executa
+
+    Provider<String> simuladorProv = ( providers.exec {
+            commandLine 'emulator', '-list-avds'
+            ignoreExitValue = true 
+        }.standardOutput.asText.map { String saida ->
+            String texto = saida.trim()
+            // Se a saída estiver vazia o comando falhou silenciosamente ou não há AVDs
+            if (texto.isEmpty()) {
+                println 'AVISO: Nenhum AVD encontrado ou erro no comando. Usando padrão.'
+                return null // retornar null dispara o .orElse() abaixo
+            }
+            // Pega a primeira linha, primeiro simulador encontrado
+            return texto.lines().findFirst().map { it.trim() }.orElse(null)
+        }.orElse(project.providers.provider {propsLocal.getProperty('simulador.android')})
+    )
 
     doFirst {
         String simulador = simuladorProv.get()
@@ -205,7 +210,7 @@ tasks.register('runAndroid', Exec) {
         // Detecção básica de SO para rodar o comando 'start' (Windows) ou '&' (Linux/Mac)
         if (System.getProperty('os.name').toLowerCase().contains('windows')) {
             String filtro = 'findstr /V ' + saidaFiltro.collect { 
-                "/${winDiscProv.get()}:\"${it}\"" 
+                "/${propsLocal.getProperty('unidade.win', 'C')}:\"${it}\"" 
             }.join(' ')
             new ProcessBuilder(
                 'cmd', '/c', "start cmd /k \"${parametros} 2>&1 | ${filtro}\""
@@ -216,26 +221,27 @@ tasks.register('runAndroid', Exec) {
         
         commandLine 'adb', 'wait-for-device' // aguarda o simulador ficar pronto
 
-        boolean bootCompleted = false
-        int attempts = 0
-        ByteArrayOutputStream stdout
-        ByteArrayOutputStream stderr
-        while (!bootCompleted && attempts < 150) { // tenta por 150 segundos
+        boolean eBootCompleto = false
+        int tentativas = 0
+        ByteArrayOutputStream saidaStd
+        ByteArrayOutputStream erroStd
+        while (!eBootCompleto && tentativas < 150) { // tenta por 150 segundos
             try {
-                stdout = new ByteArrayOutputStream()
-                stderr = new ByteArrayOutputStream()
-                Process processo = ['adb', 'shell', 'getprop', 'sys.boot_completed'].execute()
-                processo.waitForProcessOutput(stdout, stderr) // pega saída e erro e espera terminar
+                saidaStd = new ByteArrayOutputStream()
+                erroStd = new ByteArrayOutputStream()
+                [
+                    'adb', 'shell', 'getprop', 'sys.boot_completed'
+                ].execute().waitForProcessOutput(saidaStd, erroStd) // saída, erro e espera acabar
 
-                if (stdout.toString().trim() == '1') {
-                    bootCompleted = true
+                if (saidaStd.toString().trim() == '1') {
+                    eBootCompleto = true
                 } else { 
                     sleep(1000) // espera 1 segundo 
                 }
             } catch (Exception e) { 
                 sleep(1000) 
             }
-            attempts++
+            tentativas++
         }
     }
 }

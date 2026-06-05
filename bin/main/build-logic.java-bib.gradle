@@ -1,10 +1,8 @@
 // Declaração dos plugins
 // plugins {}
 // Define o diretório de build
-Provider<String> projNomeProv = providers.gradleProperty('projNome')
-Provider<String> saidaDirProv = libs.versions.valores.buildDir.java
-project.layout.buildDirectory.set(saidaDirProv.map { 
-    dir -> project.rootProject.layout.projectDirectory.dir(dir).dir(project.name) 
+project.layout.buildDirectory.set(libs.versions.valores.buildDir.java.map { String dir -> 
+    project.rootProject.layout.projectDirectory.dir(dir).dir(project.name) 
 })
 // Manipulação do arquivo .classpath para o VSCODE parar de reclamar
 project.afterEvaluate {
@@ -16,34 +14,33 @@ project.afterEvaluate {
         org.gradle.api.artifacts.Configuration bibTest = project.configurations.findByName(
             'testRuntimeClasspath'
         )
-        boolean houveAlteracao = false
+        boolean eAlterado = false
         // Verifica se a pasta src/test/java já está registrada
-        if (!xmlArq.contains("path=\"src/test/java\"")) {
+        if (!xmlArq.contains('path=\"src/test/java\"')) {
             novasEntradas.append(
-                "    <classpathentry kind=\"src\" output=\"bin/main\" " +
-                "path=\"src/test/java\">\n" +
-                "        <attributes>\n" +
-                "            <attribute name=\"gradle_scope\" value=\"test\"/>\n" +
-                "            <attribute name=\"gradle_used_by_scope\" value=\"test\"/>\n" +
-                "            <attribute name=\"test\" value=\"true\"/>\n" +
-                "        </attributes>\n" +
-                "    </classpathentry>\n"
+                '    <classpathentry kind=\"src\" output=\"bin/main\" path=\"src/test/java\">\n' +
+                '        <attributes>\n' +
+                '            <attribute name=\"gradle_scope\" value=\"test\"/>\n' +
+                '            <attribute name=\"gradle_used_by_scope\" value=\"test\"/>\n' +
+                '            <attribute name=\"test\" value=\"true\"/>\n' +
+                '        </attributes>\n' +
+                '    </classpathentry>\n'
             )
-            houveAlteracao = true
+            eAlterado = true
         }
         // Insere as biblioteas de teste
         if (bibTest != null) {
-            bibTest.files.each { File arquivo ->
-                String caminho = arquivo.absolutePath.replace(File.separator, '/')
+            bibTest.files.each { File arq ->
+                String caminho = arq.absolutePath.replace(File.separator, '/')
                 // Só arquivos .jar que não existe pra não duplicar, caminhos relativos ou absolutos
                 if (caminho.endsWith('.jar') && !xmlArq.contains("path=\"${caminho}\"")) {
                     novasEntradas.append("    <classpathentry kind=\"lib\" path=\"${caminho}\"/>\n")
-                    houveAlteracao = true
+                    eAlterado = true
                 }
             }
         }
         // Gravação do arquivo, insere as novas entradas antes do fechamento da tag </classpath>
-        if (houveAlteracao) {
+        if (eAlterado) {
             xmlArq = xmlArq.replace('</classpath>', novasEntradas.toString() + '</classpath>')
             classpathArq.write(xmlArq)
             println ">> INFO: .classpath de ${projNome} (Bib) atualizado com sucesso."
@@ -52,7 +49,8 @@ project.afterEvaluate {
 }
 // Biblioteras para serem usadas no código
 dependencies {
+    implementation libs.jsonJava // manipulação de json
     testImplementation libs.junitAPI // api dp Junit 5
     testRuntimeOnly libs.junitEngine // engine do Junit 5
-    testRuntimeOnly libs.junitPlt // talvez redundante, plataforma do junit 5
+    testRuntimeOnly libs.junitPlt // necessário
 }
