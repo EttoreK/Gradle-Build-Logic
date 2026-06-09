@@ -1,9 +1,9 @@
 // Declaração dos plugins
 // plugins {}
 // Define o diretório de build usando o nome dinâmico da pasta
-project.layout.buildDirectory.set(
-    project.rootProject.layout.projectDirectory.dir(libs.versions.valores.buildDir.web)
-)
+project.layout.buildDirectory.set(project.rootProject.layout.projectDirectory.dir(
+    providers.gradleProperty('buildDirWeb')
+))
 // Configurações do Spring e exclusão de bibliotecas padrão
 project.configurations {
     // Remove o todas as dependências de uma vez

@@ -1,8 +1,8 @@
 // Declaração dos plugins
 // plugins {}
 // Define o diretório de build
-project.layout.buildDirectory.set(libs.versions.valores.buildDir.java.map { String dir -> 
-    project.rootProject.layout.projectDirectory.dir(dir).dir(project.name) 
+project.layout.buildDirectory.set(providers.gradleProperty('buildDirJava').map { String diretorio -> 
+    project.rootProject.layout.projectDirectory.dir(diretorio).dir(project.name) 
 })
 // Manipulação do arquivo .classpath para o VSCODE parar de reclamar
 project.afterEvaluate {

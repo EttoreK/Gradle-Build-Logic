@@ -8,6 +8,7 @@ dependencies {
 }
 // Alteração da saída de build (if para burlar os erros do VSCode)
 if (gradle.parent != null) {
-    Provider<String> sDirProv = libs.versions.valores.buildDir.buildLogic
-    layout.buildDirectory = project.gradle.parent.rootProject.layout.projectDirectory.dir(sDirProv)
+    layout.buildDirectory = project.gradle.parent.rootProject.layout.projectDirectory.dir(
+        gradle.ext.buildDirBuildLogic
+    )
 }

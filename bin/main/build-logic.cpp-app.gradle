@@ -5,7 +5,7 @@ plugins.apply(libs.plugins.buildLogicCppActions.get().getPluginId()) // ações 
 // Define o diretório de build
 Provider<String> projNomeProv = providers.gradleProperty('projNome')
 project.layout.buildDirectory.set(
-    project.rootProject.layout.projectDirectory.dir(libs.versions.valores.buildDir.cpp)
+    project.rootProject.layout.projectDirectory.dir(providers.gradleProperty('buildDirCpp'))
 )
 // Configurações da aplicação
 application {

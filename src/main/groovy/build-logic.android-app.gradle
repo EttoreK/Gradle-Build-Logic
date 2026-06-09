@@ -2,12 +2,10 @@
 // plugins {}
 plugins.apply(libs.plugins.buildLogicAndroidGeral.get().getPluginId()) // configurações do android
 plugins.apply(libs.plugins.buildLogicAndroidActions.get().getPluginId()) // ações de build
-// Atalhos para libs.versions.toml para facilitar a leitura
-Object val = libs.versions.valores
 // Define o diretório de build
 Provider<String> projNomeProv = providers.gradleProperty('projNome')
 project.layout.buildDirectory.set(
-    project.rootProject.layout.projectDirectory.dir(val.buildDir.android)
+    project.rootProject.layout.projectDirectory.dir(providers.gradleProperty('buildDirAndroid'))
 )
 // Definição das características do aplicativo
 android {
@@ -36,7 +34,7 @@ android {
             shrinkResources = true
             signingConfig = signingConfigs.debug
             proguardFiles getDefaultProguardFile(
-                val.android.proguardAndroid.get()), val.android.proguardRules.get()
+                'proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         // Regras para a debug do aplicativo
         debug {

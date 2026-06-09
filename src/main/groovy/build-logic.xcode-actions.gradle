@@ -3,77 +3,145 @@
 plugins.apply(libs.plugins.buildLogicXcodeGeral.get().getPluginId())
 // application {} // Define configurações do swift-application (incompativel com gradle 9 [11/2025])
 // Atalhos para facilitar a leitura
-Object x = project.ext.get('xcodeVars')
+Object x = project.ext.xcodeVars
 // Definição de provedores para acesso à valores de configuração e diretórios
-Provider<String> vmXcodeDirProv = x.vmDirProv.zip(x.buildXDirProv) { String dir, String bDir -> 
-    new File(dir.toString(), bDir).path.replace(File.separator, '/')
+Provider<String> vmXcodeDirProv = x.provs.vmDirProv.zip(x.provs.buildXDirProv) { 
+    String dir, String bDir -> new File(dir.toString(), bDir).path.replace(File.separator, '/')
 }
 Provider<Directory> xcDirProv = project.providers.provider { 
-    project.rootProject.layout.projectDirectory.dir(x.buildXDirProv.get()) 
+    project.rootProject.layout.projectDirectory.dir(x.provs.buildXDirProv.get()) 
 }
 // Busca um simulador de iOS disponível para testes e armazena em cache
-String cacheSimulador // cache manual para pegaSimulador
-Closure<String> pegaSimulador = { ->
-    if (cacheSimulador) { return cacheSimulador } // Retorna o valor em cache se exisitr
-    String simuladorUsual = x.simuladorUsualProv.get()
-    String saida = ''
-    // Executa o comando para listar os dispositivos simulados em JSON
-    try { // O try/catch age como ignoreExitValue, se o comando falhar a saida continua vazia
-        ByteArrayOutputStream saidaStd = new ByteArrayOutputStream()
-        ByteArrayOutputStream erroStd = new ByteArrayOutputStream() // captura o erro
-        Process processo = x.comandoRemoto(['xcrun', 'simctl list -j devices']).execute()
-        processo.waitForProcessOutput(saidaStd, erroStd) // pega a saída e espera o comando terminar
-        String erro = erroStd.toString().trim()
-        saida = saidaStd.toString().trim()
-
-        if (!erro.isEmpty()) { println ">> ERRO: falha ao listar simuladores. ${erro}" }
-    } catch (Exception e) { 
-        println ">> AVISO: falha ao executar. Usando '${simuladorUsual}'. ${e.message}" 
-    }
-    // Verifica se o comando produziu alguma saída
-    if (saida.isBlank()) {
-        println ">> AVISO: falha ao pegar simulador instalado. Usando '${simuladorUsual}'."
-        return (cacheSimulador = simuladorUsual)
-    }
-    // Pega todos os dispositivos de todos os runtimes em uma única lista
-    try {
-        Map<String, Object> jsonSaidaMap = new groovy.json.JsonSlurper().parseText(saida)
-        List<Map<String, Object>> aparelhos = jsonSaidaMap.devices.values().flatten()
-        // PRIORIDADE 1: Encontrar qualquer simulador que já esteja ativo ('Booted')
-        Map<String, Object> aparelhoAtivoMap = aparelhos.find { it.state == 'Booted' }
-        if (aparelhoAtivoMap) { return (cacheSimulador = aparelhoAtivoMap.name) }
-        // PRIORIDADE 2: Se nenhum estiver ativo, encontrar o primeiro iPhone ou iPad disponível
-        Map<String, Object> aparelhoPreparadoMap = aparelhos.find {
-            it.isAvailable && (it.name.startsWith('iPhone') || it.name.startsWith('iPad'))
+Provider<String> iosSim = project.providers.gradleProperty('simIos').orElse(project.providers.exec {
+        commandLine(x.auxs.comandoRemoto(['xcrun', 'simctl list -j devices']))
+        ignoreExitValue = true // ignora falhas do comando
+    }.standardOutput.asText.map { String saida -> // Só roda se o comando acabar e devolver um texto
+        println '\n>>> EXECUTANDO BUSCA DE SIMULADOR <<<\n'
+        
+        if (saida.isBlank()) {
+            println '>> AVISO: falha ao pegar simulador. Tentando fallback.'
+            return null // aciona o orElse()
         }
-        if (aparelhoPreparadoMap) { return (cacheSimulador = aparelhoPreparadoMap.name) }
-    } catch (Exception e) { 
-        println ">> AVISO: falha de leitura. Usando '${simuladorUsual}'. ${e.message}" 
-    }
-    return (cacheSimulador = simuladorUsual)
-}
-// Retorna um caminho de diretório (String) absoluto, seja local ou remoto (na VM)
+        
+        try {
+            Map<String, Object> jsonSaidaMap = new groovy.json.JsonSlurper().parseText(saida)
+            List<Map<String, Object>> aparelhos = jsonSaidaMap.devices.values().flatten()
+            // PRIORIDADE 1: Aparelho ativo
+            Map<String, Object> aparelhoAtivoMap = aparelhos.find { it.state == 'Booted' }
+            if (aparelhoAtivoMap) { return aparelhoAtivoMap.name }
+            // PRIORIDADE 2: Primeiro iPhone/iPad disponível
+            Map<String, Object> aparelhoPreparadoMap = aparelhos.find {
+                it.isAvailable && (it.name.startsWith('iPhone') || it.name.startsWith('iPad'))
+            }
+            if (aparelhoPreparadoMap) { return aparelhoPreparadoMap.name }
+        } catch (Exception e) { println ">> AVISO: falha de leitura do JSON. ${e.message}" }
+        return null 
+    }.orElse(x.provs.simuladorUsualProv) // se não encontgrar
+)
+// Provider<String> iosSim = project.providers.gradleProperty('simIos').orElse(
+//     project.providers.provider { 
+//     println '\n>>> EXECUTANDO <<<\n'
+//     String simuladorUsual = x.provs.simuladorUsualProv.get()
+//     String saida = ''
+//     // Executa o comando para listar os dispositivos simulados em JSON
+//     try { // O try/catch age como ignoreExitValue, se o comando falhar a saida continua vazia
+//         ByteArrayOutputStream saidaStd = new ByteArrayOutputStream()
+//         ByteArrayOutputStream erroStd = new ByteArrayOutputStream() // captura o erro
+//         Process processo = x.auxs.comandoRemoto(['xcrun', 'simctl list -j devices']).execute()
+//         processo.waitForProcessOutput(saidaStd, erroStd) // pega a saída e espera terminar
+//         String erro = erroStd.toString().trim()
+//         saida = saidaStd.toString().trim()
+
+//         if (!erro.isEmpty()) { println ">> ERRO: falha ao listar simuladores. ${erro}" }
+//     } catch (Exception e) { 
+//         println ">> AVISO: falha ao executar. Usando '${simuladorUsual}'. ${e.message}" 
+//     }
+//     // Verifica se o comando produziu alguma saída
+//     if (saida.isBlank()) {
+//         println ">> AVISO: falha ao pegar simulador instalado. Usando '${simuladorUsual}'."
+//         return simuladorUsual
+//     }
+//     // Pega todos os dispositivos de todos os runtimes em uma única lista
+//     try {
+//         Map<String, Object> jsonSaidaMap = new groovy.json.JsonSlurper().parseText(saida)
+//         List<Map<String, Object>> aparelhos = jsonSaidaMap.devices.values().flatten()
+//         // PRIORIDADE 1: Encontrar qualquer simulador que já esteja ativo ('Booted')
+//         Map<String, Object> aparelhoAtivoMap = aparelhos.find { it.state == 'Booted' }
+//         if (aparelhoAtivoMap) { return aparelhoAtivoMap.name }
+//         // PRIORIDADE 2: Se nenhum estiver ativo, encontrar o primeiro iPhone ou iPad disponível
+//         Map<String, Object> aparelhoPreparadoMap = aparelhos.find {
+//             it.isAvailable && (it.name.startsWith('iPhone') || it.name.startsWith('iPad'))
+//         }
+//         if (aparelhoPreparadoMap) { return aparelhoPreparadoMap.name }
+//     } catch (Exception e) { 
+//         println ">> AVISO: falha de leitura. Usando '${simuladorUsual}'. ${e.message}" 
+//     }
+//     return simuladorUsual
+// })
+// String cacheSimulador // cache manual para pegaSimulador
+// Closure<String> pegaSimulador = { ->
+//     if (cacheSimulador) { return cacheSimulador } // Retorna o valor em cache se exisitr
+//     String simuladorUsual = x.provs.simuladorUsualProv.get()
+//     String saida = ''
+//     // Executa o comando para listar os dispositivos simulados em JSON
+//     try { // O try/catch age como ignoreExitValue, se o comando falhar a saida continua vazia
+//         ByteArrayOutputStream saidaStd = new ByteArrayOutputStream()
+//         ByteArrayOutputStream erroStd = new ByteArrayOutputStream() // captura o erro
+//         Process processo = x.auxs.comandoRemoto(['xcrun', 'simctl list -j devices']).execute()
+//         processo.waitForProcessOutput(saidaStd, erroStd) // pega a saída e espera o comando terminar
+//         String erro = erroStd.toString().trim()
+//         saida = saidaStd.toString().trim()
+
+//         if (!erro.isEmpty()) { println ">> ERRO: falha ao listar simuladores. ${erro}" }
+//     } catch (Exception e) { 
+//         println ">> AVISO: falha ao executar. Usando '${simuladorUsual}'. ${e.message}" 
+//     }
+//     // Verifica se o comando produziu alguma saída
+//     if (saida.isBlank()) {
+//         println ">> AVISO: falha ao pegar simulador instalado. Usando '${simuladorUsual}'."
+//         return (cacheSimulador = simuladorUsual)
+//     }
+//     // Pega todos os dispositivos de todos os runtimes em uma única lista
+//     try {
+//         Map<String, Object> jsonSaidaMap = new groovy.json.JsonSlurper().parseText(saida)
+//         List<Map<String, Object>> aparelhos = jsonSaidaMap.devices.values().flatten()
+//         // PRIORIDADE 1: Encontrar qualquer simulador que já esteja ativo ('Booted')
+//         Map<String, Object> aparelhoAtivoMap = aparelhos.find { it.state == 'Booted' }
+//         if (aparelhoAtivoMap) { return (cacheSimulador = aparelhoAtivoMap.name) }
+//         // PRIORIDADE 2: Se nenhum estiver ativo, encontrar o primeiro iPhone ou iPad disponível
+//         Map<String, Object> aparelhoPreparadoMap = aparelhos.find {
+//             it.isAvailable && (it.name.startsWith('iPhone') || it.name.startsWith('iPad'))
+//         }
+//         if (aparelhoPreparadoMap) { return (cacheSimulador = aparelhoPreparadoMap.name) }
+//     } catch (Exception e) { 
+//         println ">> AVISO: falha de leitura. Usando '${simuladorUsual}'. ${e.message}" 
+//     }
+//     return (cacheSimulador = simuladorUsual)
+// }
+// Retorna um caminho absoluto de diretório, seja local ou remoto
 Closure<String> pegaDir = { String sobDir, String subDir ->
-    if (x.eMacProv.get()) { return xcDirProv.get().dir(sobDir).dir(subDir).asFile.absolutePath } 
+    if (x.provs.eMacProv.get()) {return xcDirProv.get().dir(sobDir).dir(subDir).asFile.absolutePath} 
     else { return "${vmXcodeDirProv.get()}/${sobDir}/${subDir}" }
 }
 // Retorna arquivos para os artefatos de build. Retorna vazio se estiver em modo remoto
 Closure<Provider<FileCollection>> pegaArquivos = {String subDir ->
-    if (x.eMacProv.get()) {return project.layout.files(xcDirProv.get().dir('products').dir(subDir))} 
-    else { return project.layout.files(new File("${vmXcodeDirProv.get()}/products/${subDir}")) }
+    if (x.provs.eMacProv.get()) {
+        return project.layout.files(xcDirProv.get().dir('products').dir(subDir))
+    } else { return project.layout.files(new File("${vmXcodeDirProv.get()}/products/${subDir}")) }
 }
+// Retorna um caminho de derived-data para cada plataforma
 Closure<String> pegaArchiveDir = { String platforma ->
-    "${pegaDir('derived-data', platforma)}/${x.nomeAppProv.get()}-${platforma}.xcarchive"
+    "${pegaDir('derived-data', platforma)}/${x.provs.nomeAppProv.get()}-${platforma}.xcarchive"
 }
 // Tarefa para sincronizar os arquivos do diretório app para a VM MacOS
 tasks.register('syncToMac') { // caso necessário use "--rerun" para forçar a reexecução
     description = 'Garante que o diretório existe, sincroniza os arquivos e ajusta as permissões.'
     group = 'MacOs Controller'
-    onlyIf { !x.eMacProv.get() } // executa apenas se não for MacOS local
-    inputs.files(x.projDirProv.map { Directory dir -> dir.asFileTree.matching {
+    onlyIf { !x.provs.eMacProv.get() } // executa apenas se não for MacOS local
+    inputs.files(x.provs.projDirProv.map { Directory dir -> dir.asFileTree.matching {
         exclude 'build/**'
         exclude '.gradle/**'
-        exclude 'build.gradle' // exclui o build.gradle dentro de x.projDirProv, se existir
+        exclude 'build.gradle' // exclúi o build.gradle dentro de x.provs.projDirProv, se existir
     }})
     outputs.upToDateWhen { true } // só sincroniza 1 vez, neessário para não apagar as builds
 
@@ -83,10 +151,10 @@ tasks.register('syncToMac') { // caso necessário use "--rerun" para forçar a r
     // Executa o comando de limpeza e criação diretamente via SSH
     doFirst {
         List<String> preparoComandos = [
-            'rm', '-rf', "\'${x.vmDirProv.get()}\'", '|| true &&', 
-            'mkdir', '-p', "\'${x.vmAppDirProv.get()}\'"
+            'rm', '-rf', "\'${x.provs.vmDirProv.get()}\'", '|| true &&', 
+            'mkdir', '-p', "\'${x.provs.vmAppDirProv.get()}\'"
         ]
-        Process processoPreparo = x.comandoRemoto(preparoComandos).execute()
+        Process processoPreparo = x.auxs.comandoRemoto(preparoComandos).execute()
         processoPreparo.waitForProcessOutput(System.out, System.err)
         if (processoPreparo.exitValue() != 0) {
             throw new GradleException('Falha ao preparar os diretórios na VM.')
@@ -94,12 +162,12 @@ tasks.register('syncToMac') { // caso necessário use "--rerun" para forçar a r
     }
     
     doLast {
-        String vmEntrada = x.comandoRemoto(['']).find { it.contains('@') }
-        String vmProjDir = x.vmDirProv.get()
-        String vmAppDir = x.vmAppDirProv.get()
-        String vmResDir = "${vmAppDir}/src/main/resources"
+        String vmEntrada = x.auxs.comandoRemoto(['']).find { it.contains('@') }
+        String vmProjDir = x.provs.vmDirProv.get()
+        String vmAppDir = x.provs.vmAppDirProv.get()
+        String vmResDir = "${vmAppDir}/${x.cons.resDir}"
         
-        x.projDirProv.get().asFile.eachFile { File arq ->
+        x.provs.projDirProv.get().asFile.eachFile { File arq ->
             if (arq.name in ['.gradle', 'build', 'build.gradle']) { return }
             
             List<String> copiaCmds = [
@@ -125,9 +193,9 @@ tasks.register('syncToMac') { // caso necessário use "--rerun" para forçar a r
 
         File geradoDir = xcDirProv.get().dir('generated').asFile
         if (geradoDir.exists()) {
-            String vmBuildXCodeDir = "${vmAppDir}/${x.buildXDirProv.get()}"
+            String vmBuildXCodeDir = "${vmAppDir}/${x.provs.buildXDirProv.get()}"
             // Garante que a pasta build/xcode exista na VM antes de copiar
-            x.comandoRemoto(
+            x.auxs.comandoRemoto(
                 ['mkdir', '-p', "\'${vmBuildXCodeDir}\'"]
             ).execute().waitForProcessOutput(System.out, System.err)
             
@@ -145,7 +213,7 @@ tasks.register('syncToMac') { // caso necessário use "--rerun" para forçar a r
             'sudo', 'chown', '-R', "${vmEntrada.split('@')[0]} \'${vmProjDir}\'", '&&', 
             'sudo', 'chmod', '-R u+rwX', "\'${vmProjDir}\'"
         ]
-        Process processoPermissoes = x.comandoRemoto(permissoesCmds).execute()
+        Process processoPermissoes = x.auxs.comandoRemoto(permissoesCmds).execute()
         processoPermissoes.waitForProcessOutput(System.out, System.err)
         if (processoPermissoes.exitValue() != 0) { 
             throw new GradleException('Falha ao ajustar permissões') 
@@ -156,15 +224,17 @@ tasks.register('syncToMac') { // caso necessário use "--rerun" para forçar a r
 tasks.register('cleanMac', Exec) {
     description = 'Limpa os arquivos de build do Xcode para iOS.'
     group = 'MacOs Controller'
-    workingDir(x.projDirProv)
+    workingDir(x.provs.projDirProv)
     outputs.upToDateWhen { false } // sempre executa 
 
     doFirst {
-        String simulador = pegaSimulador()
-        String dirXc = x.eMacProv.get() ? xcDirProv.get().asFile.absolutePath : vmXcodeDirProv.get()
+        String simulador = iosSim.get()
+        // String simulador = pegaSimulador()
         String donoMac = '\$(getconf DARWIN_USER_CACHE_DIR)' // pra reduzir o tamanho da linha
+        String dirXc = x.provs.eMacProv.get() ? 
+            xcDirProv.get().asFile.absolutePath : vmXcodeDirProv.get()
 
-        commandLine x.comandoRemoto([
+        commandLine x.auxs.comandoRemoto([
             // Finaliza Processos e Executa o Clean Oficial
             'killall', 'Xcode', '|| true &&',
             'xcrun', '-k', '|| true &&',
@@ -193,26 +263,28 @@ tasks.register('cleanMac', Exec) {
 Closure<Void> xbuild = { Task tarefa, String platforma, String sdk, String config ->
     tarefa.description = "Compila o projeto Xcode para ${platforma.toUpperCase()} (${config})"
     tarefa.group = 'Xcode Actions'
-    tarefa.inputs.dir x.srcDirProv
-    tarefa.inputs.dir x.xcodeProjProv
+    tarefa.inputs.dir x.provs.srcDirProv
+    tarefa.inputs.dir x.provs.xcodeProjProv
     tarefa.inputs.files(tasks.named('syncToMac')) // garante sync antes do build, se remoto
-    tarefa.outputs.dir({ -> x.eMacProv.get() ? pegaArquivos("${config}-${sdk}") : null}).optional()
+    tarefa.outputs.dir({ -> 
+        x.provs.eMacProv.get() ? pegaArquivos("${config}-${sdk}") : null
+    }).optional()
 
     tarefa.doFirst { // Configura o comando de build do Xcode
         List<String> comandos = [
             'xcrun', 'xcodebuild', 'build', 'CODE_SIGN_IDENTITY=-', 'CODE_SIGNING_REQUIRED=NO',
-            '-project', x.xcodeProjProv.get(),
+            '-project', x.provs.xcodeProjProv.get(),
             '-configuration', config,
             '-sdk', sdk,
-            '-scheme', "${x.nomeAppProv.get()}-${platforma == 'ios' ? 'iOS' : 'macOS'}",
+            '-scheme', "${x.provs.nomeAppProv.get()}-${platforma == 'ios' ? 'iOS' : 'macOS'}",
             '-derivedDataPath', pegaDir('derived-data', platforma)
         ]
         // Caso iOS, adiciona o destino do simulador
         if (platforma == 'ios') { comandos.addAll([ 
-            '-destination', "platform=\'iOS Simulator\',name=\'${pegaSimulador()}\'" 
+            '-destination', "platform=\'iOS Simulator\',name=\'${iosSim.get()}\'" 
         ])} else { comandos.addAll([ '-destination', "platform=macOS,name=\'My Mac\'" ]) }
 
-        tarefa.commandLine = x.comandoRemoto(comandos)
+        tarefa.commandLine = x.auxs.comandoRemoto(comandos)
     }
 }
 // Registra as tarefas de build para cada plataforma e configuração
@@ -227,20 +299,22 @@ Closure<Void> xrun = { Task tarefa, String platforma, String sdk, String config 
     tarefa.outputs.upToDateWhen { false } // sempre executa
 
     tarefa.doFirst {
+        String xcIdPacote = x.provs.xcIdPacoteAppProv.get()
         List<String> comandos = []
-        String app = "${pegaDir('products', "${config}-${sdk}")}/${x.nomeAppProv.get()}.app"
+        String app = "${pegaDir('products', "${config}-${sdk}")}/${x.provs.nomeAppProv.get()}.app"
         // Caso iOS, usa simctl para instalar e lançar no simulador
         if (platforma == 'ios') { 
-            String sim = pegaSimulador()
+            String simulador = iosSim.get()
+            // String simulador = pegaSimulador()
             comandos.addAll([
-            'xcrun', 'simctl boot', "\'${sim}\'", '|| true &&',
+            'xcrun', 'simctl boot', "\'${simulador}\'", '|| true &&',
             'open', '-a Simulator', '|| true &&',
-            'xcrun', 'simctl bootstatus', "\'${sim}\'", '&&',
-            'xcrun', 'simctl install', "\'${sim}\'", "\'${app}\'", '&&',
-            'xcrun', 'simctl launch', "\'${sim}\'", "\'${x.xcIdPacoteAppProv.get()}.ios\'"
+            'xcrun', 'simctl bootstatus', "\'${simulador}\'", '&&',
+            'xcrun', 'simctl install', "\'${simulador}\'", "\'${app}\'", '&&',
+            'xcrun', 'simctl launch', "\'${simulador}\'", "\'${xcIdPacote}.ios\'"
         ])} else { comandos.addAll(['open', app]) } // caso macOS, usa open diretamente
         
-        tarefa.commandLine = x.comandoRemoto(comandos)
+        tarefa.commandLine = x.auxs.comandoRemoto(comandos)
     }
 }
 // Registra as tarefas de execução para cada plataforma e configuração
@@ -251,7 +325,9 @@ Closure<Void> xtest = { Task tarefa, String platforma, String sdk, Provider<Stri
     tarefa.description = "Executa os testes para ${platforma.toUpperCase()}"
     tarefa.group = 'Xcode Actions'
     // Dependência implícita do build
-    tarefa.inputs.files({ -> x.eMacProv.get() ? pegaArquivos("Debug-${sdk}") : null }).optional()
+    tarefa.inputs.files({ -> 
+        x.provs.eMacProv.get() ? pegaArquivos("Debug-${sdk}") : null 
+    }).optional()
     tarefa.inputs.files(tasks.named('syncToMac')) // garante sync antes do teste, se remoto
 
     tarefa.doFirst {
@@ -259,13 +335,13 @@ Closure<Void> xtest = { Task tarefa, String platforma, String sdk, Provider<Stri
         String derivedDataDir = pegaDir('derived-data', platforma)
         String resultadoPacoteArq = "${derivedDataDir}/TestResults-${nomeTeste}.xcresult"
         // Garante que o diretório de resultados anterior seja limpo
-        if (x.eMacProv.get()) { // Caso MacOS: Usa rm -rf
+        if (x.provs.eMacProv.get()) { // Caso MacOS: Usa rm -rf
             File resultadoPacoteDir = new File(resultadoPacoteArq)
             // Caso Local deleta o diretório .xcresult diretamente
             if (resultadoPacoteDir.exists()) { resultadoPacoteDir.deleteDir() }
         } else { // Caso Remoto executa rm -rf via SSH
             List<String> removerCmds = ['rm', '-rf', "\'${resultadoPacoteArq}\'"]
-            Process processoRemover = x.comandoRemoto(removerCmds).execute()
+            Process processoRemover = x.auxs.comandoRemoto(removerCmds).execute()
             processoRemover.waitForProcessOutput(System.out, System.err) // para ver os logs
             if (processoRemover.exitValue() != 0) {
                 throw new GradleException('Falha ao limpar resultados de teste antigos na VM.')
@@ -274,7 +350,7 @@ Closure<Void> xtest = { Task tarefa, String platforma, String sdk, Provider<Stri
         // Configura o comando de teste do Xcode
         List<String> comandos = [
             'xcrun', 'xcodebuild', 'test',
-            '-project', x.xcodeProjProv.get(),
+            '-project', x.provs.xcodeProjProv.get(),
             '-scheme', "${nomeTeste}-${platforma == 'ios' ? 'iOS' : 'macOS'}",
             '-configuration', 'Debug',
             '-derivedDataPath', derivedDataDir,
@@ -283,55 +359,58 @@ Closure<Void> xtest = { Task tarefa, String platforma, String sdk, Provider<Stri
         ]
         // Caso iOS, adiciona o destino do simulador
         if (platforma == 'ios') { 
-            comandos.addAll(['-destination', "\'platform=iOS Simulator,name=${pegaSimulador()}\'"])
+            comandos.addAll(['-destination', "\'platform=iOS Simulator,name=${iosSim.get()}\'"])
         } else { comandos.addAll(['-destination', "\'platform=macOS,name=My Mac\'"]) }
 
-        tarefa.commandLine = x.comandoRemoto(comandos)
+        tarefa.commandLine = x.auxs.comandoRemoto(comandos)
     }
 }
 // Registra as tarefas de teste para cada plataforma e configuração
-tasks.register('testMacosUnit', Exec) { xtest(it, 'macos', 'macosx', x.xcUnitTesteNomeProv) }
-tasks.register('testMacosUi', Exec) { xtest(it, 'macos', 'macosx', x.xcUITesteNomeProv) }
-tasks.register('testIosUnit', Exec) { xtest(it, 'ios', 'iphonesimulator', x.xcUnitTesteNomeProv) }
-tasks.register('testIosUi', Exec) { xtest(it, 'ios', 'iphonesimulator', x.xcUITesteNomeProv) }
+tasks.register('testMacosUnit', Exec) { xtest(it, 'macos', 'macosx', x.provs.xcUnitTesteNomeProv) }
+tasks.register('testMacosUi', Exec) { xtest(it, 'macos', 'macosx', x.provs.xcUITesteNomeProv) }
+tasks.register('testIosUnit', Exec) { 
+    xtest(it, 'ios', 'iphonesimulator', x.provs.xcUnitTesteNomeProv)}
+tasks.register('testIosUi', Exec) { xtest(it, 'ios', 'iphonesimulator', x.provs.xcUITesteNomeProv) }
 // Cria um arquivo .xcarchive para distribuição
 Closure<Void> xarchive = { Task tarefa, String platforma, String sdk ->
     tarefa.description = "Cria um arquivo .xcarchive para ${platforma.toUpperCase()} (Release)"
     tarefa.group = 'Xcode Actions'
-    tarefa.inputs.dir x.srcDirProv
-    tarefa.inputs.dir x.xcodeProjProv
+    tarefa.inputs.dir x.provs.srcDirProv
+    tarefa.inputs.dir x.provs.xcodeProjProv
     tarefa.inputs.files(tasks.named('syncToMac'))
-    tarefa.outputs.file(x.eMacProv.flatMap { Boolean eMac ->
+    tarefa.outputs.file(x.provs.eMacProv.flatMap { Boolean eMac ->
         if (eMac) { return providers.provider {
             project.rootProject.layout.projectDirectory.file(pegaArchiveDir(platforma)) }
         } else { return providers.provider { null } }
     }).optional()
     // O Archive usa uma configuração específica de Release
     tarefa.doFirst {
-        String idTimeProv = x.idTimeProv.get()
+        String idTime = x.provs.idTimeProv.get()
+        String categoria = x.provs.categoriaProv.get()
+        String perfil = x.provs.nomePerfilProv.get()
         List<String> comandos = [
             'xcrun', 'xcodebuild', 'archive',
-            '-project', x.xcodeProjProv.get(),
-            '-scheme', "${x.nomeAppProv.get()}-${platforma == 'ios' ? 'iOS' : 'macOS'}",
+            '-project', x.provs.xcodeProjProv.get(),
+            '-scheme', "${x.provs.nomeAppProv.get()}-${platforma == 'ios' ? 'iOS' : 'macOS'}",
             '-sdk', sdk,
             '-archivePath', pegaArchiveDir(platforma),
             'BUILD_LIBRARY_FOR_DISTRIBUTION=YES',
-            "INFOPLIST_KEY_LSApplicationCategoryType=public.app-category.${x.categoriaProv.get()}"
+            "INFOPLIST_KEY_LSApplicationCategoryType=public.app-category.${categoria}"
         ]
         // Configuração de destino, iOS precisa de destino explícito
         if (platforma == 'ios') { comandos.addAll([ '-destination', 'generic/platform=iOS' ]) }
         else { comandos.addAll([ '-destination', 'platform=macOS' ]) }
         // Configuração de credenciais
-        if (idTimeProv != 'TAPABURACO') { comandos.addAll([ 
-            'CODE_SIGNING_REQUIRED=YES', "DEVELOPMENT_TEAM=${idTimeProv}",
-            "CODE_SIGN_IDENTITY=\'Apple Distribution: ${x.nomePerfilProv.get()} (${idTimeProv})\'", 
-            "PROVISIONING_PROFILE_SPECIFIER=\'${x.nomePerfilProv.get()}\'"
+        if (idTime != 'TAPABURACO') { comandos.addAll([ 
+            'CODE_SIGNING_REQUIRED=YES', "DEVELOPMENT_TEAM=${idTime}",
+            "CODE_SIGN_IDENTITY=\'Apple Distribution: ${perfil} (${idTime})\'", 
+            "PROVISIONING_PROFILE_SPECIFIER=\'${perfil}\'"
         ])} else { comandos.addAll([ 
             'CODE_SIGN_IDENTITY=-', 'CODE_SIGNING_ALLOWED=NO', 'CODE_SIGNING_REQUIRED=NO', 
             'PROVISIONING_PROFILE=', 'PROVISIONING_PROFILE_SPECIFIER=' 
         ])}
 
-        tarefa.commandLine = x.comandoRemoto(comandos)
+        tarefa.commandLine = x.auxs.comandoRemoto(comandos)
     }
 }
 // Registro das tarefas de arquivamento para cada plataforma
@@ -342,7 +421,7 @@ Closure<Void> xexport = { Task tarefa, String platforma ->
     tarefa.description = 'Exporta o apliativo.xcarchive para AppStore'
     tarefa.group = 'Xcode Actions'
     tarefa.inputs.files(tasks.named("archive${platforma.capitalize()}")) // dependência implicita
-    tarefa.outputs.file(x.eMacProv.map { Boolean eMac ->
+    tarefa.outputs.file(x.provs.eMacProv.map { Boolean eMac ->
         if (eMac) {
             String exportExt = (platforma == 'ios' ? 'ipa' : 'pkg')
             return "${pegaDir('derived-data', platforma)}/Exported-Products/Logger.${exportExt}"
@@ -351,14 +430,14 @@ Closure<Void> xexport = { Task tarefa, String platforma ->
 
     tarefa.doFirst {
         String exportDir = "${pegaDir('derived-data', platforma)}/Exported-Poducts"
-        String plistDir = "${x.xcodeProjProv.get()}/exportOptions.plist"
-        String localPlistDir = new File(x.projDirProv.get().asFile, plistDir).absolutePath
+        String plistDir = "${x.provs.xcodeProjProv.get()}/exportOptions.plist"
+        String localPlistDir = new File(x.provs.projDirProv.get().asFile, plistDir).absolutePath
         // Comando de Exportação requer um .plist, criado em xcode-project
-        tarefa.commandLine = x.comandoRemoto([
+        tarefa.commandLine = x.auxs.comandoRemoto([
             'xcrun', 'xcodebuild', '-exportArchive',
             '-archivePath', pegaArchiveDir(platforma),
             '-exportPath', exportDir,
-            '-exportOptionsPlist', x.eMacProv.get() ? localPlistDir : plistDir
+            '-exportOptionsPlist', x.provs.eMacProv.get() ? localPlistDir : plistDir
         ])
     }
 }
@@ -373,12 +452,13 @@ Closure<Void> xsubmit = { Task tarefa, String platforma ->
 
     tarefa.doFirst {
         String exportDir = "${pegaDir('derived-data', platforma)}/Exported-Poducts"
+        String exportArq = (platforma == 'ios' ? 'ipa' : 'pkg')
         
-        tarefa.commandLine = x.comandoRemoto([
+        tarefa.commandLine = x.auxs.comandoRemoto([
             'xcrun', 'altool', '--upload-app',
-            '--username', x.appleIdProv.get(), 
-            '--password', x.appleSenhaProv.get(),
-            '--file', "${exportDir}/${x.nomeAppProv.get()}.${(platforma == 'ios' ? 'ipa' : 'pkg')}" 
+            '--username', x.provs.appleIdProv.get(), 
+            '--password', x.provs.appleSenhaProv.get(),
+            '--file', "${exportDir}/${x.provs.nomeAppProv.get()}.${exportArq}" 
         ])
     }
 }

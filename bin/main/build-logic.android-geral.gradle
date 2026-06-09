@@ -2,7 +2,6 @@
 // plugins {}
 // Atalhos para libs.versions.toml para facilitar a leitura
 Object ver = libs.versions
-Object val = ver.valores
 Provider<Directory> espolioDirProv = project.rootProject.layout.projectDirectory.dir(
     providers.gradleProperty('espolioDir').orElse('espolio')
 )
@@ -41,12 +40,12 @@ android {
     sourceSets {
         // Código principal, androidx usa res, mas o gradle cria resources
         main {
-            res.srcDirs = [val.android.recursosMain] // recursos .xml do código
+            res.srcDirs = ['src/main/resources'] // recursos .xml do código
             assets.srcDirs += [espolioDirProv] // recursos gerais
         }
         // Códigos de teste
         test { 
-            res.srcDirs = [val.android.recursosTest] // recursos .xml dos códigos de teste
+            res.srcDirs = ['src/test/resources'] // recursos .xml dos códigos de teste
             assets.srcDirs += [espolioDirProv] // recursos gerais
         }
     }

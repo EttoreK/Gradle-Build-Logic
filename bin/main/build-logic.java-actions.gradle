@@ -11,14 +11,10 @@ Provider<Directory> deployDirProv = buildDirProv.dir('distributions')
 Provider<String> nomeAppProv = providers.gradleProperty('projNome')
 Provider<String> espNomeProv = providers.gradleProperty('espolioDir').orElse('espolio')
 Provider<String> verNumProv = providers.gradleProperty('appVerNum')
-Provider<Boolean> jarMagroProv = project.providers.gradleProperty('thin')
-    .map { String valor -> valor.toBoolean() } // Se o -Pthin existir, converte o texto para Boolean
-    .orElse(
-        project.providers.provider {
-            // Se o -Pthin NÃO existir, verifica se a sua tarefa chamou o build
-            gradle.startParameter.taskNames.contains('submitWeb')
-        }
-    ) // -Pthin=true
+Provider<Boolean> jarMagroProv = project.providers.gradleProperty('buildMagroWeb').map { 
+    String valor -> valor.toBoolean() }.orElse( project.providers.provider { 
+        gradle.startParameter.taskNames.contains('submitWeb') //verifica qual tarefa chamou o build
+    })
 // Tarefas personalizadas
 tasks.named('jar') { enabled = false } // destivado para não gerar jar parciais
 // Configurado para alterar o nome do jar gerado e otimizar o tamanho do arquivo
@@ -151,6 +147,10 @@ tasks.register('runWeb') { // http://localhost:8080
 
         pb.directory(deployDir)
         pb.start()
+    }
+
+    doLast {
+        println ('>> INFO: Aplicação web disponível em http://localhost:8080')
     }
 }
 // Realiza todos os testes

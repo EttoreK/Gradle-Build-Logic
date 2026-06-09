@@ -1,15 +1,16 @@
-// Busca um arquivo que possua a propriedade buildlogicNome para definir como propRaiz
-final Properties propRaiz = new Properties()
+// Busca um arquivo que possua a propriedade buildlogicNome para definir como propsRaiz
+final Properties propsRaiz = new Properties()
 FileInputStream fileInputStream = null
-settingsDir.parentFile.listFiles().any { final file ->
-    if (file.isFile() && file.canRead()) {
-        fileInputStream = new FileInputStream(file)
-        propRaiz.load(fileInputStream)
-        if (propRaiz.buildlogicNome != null) { return true } 
-        else { propRaiz.clear() }
+settingsDir.parentFile.listFiles().any { final File arq ->
+    if (arq.isFile() && arq.canRead()) {
+        fileInputStream = new FileInputStream(arq)
+        propsRaiz.load(fileInputStream)
+        if (propsRaiz.buildlogicNome != null) { return true } 
+        else { propsRaiz.clear() }
     }
 }
 fileInputStream.close();
+gradle.ext.buildDirBuildLogic = propsRaiz.buildDirBuildLogic // compartilha para o build-gradle
 // Resolução de dependências
 dependencyResolutionManagement {
     // Aonde buscar para cumprir as dependências
@@ -21,10 +22,10 @@ dependencyResolutionManagement {
     // Acesso ao libs.versions.toml
     versionCatalogs {
         // Busca e define o libs.versions.toml como libs e usa como catálogo de versão
-        create(propRaiz.libsNome) {
-            from(files(propRaiz.libsDir))
+        create(propsRaiz.libsNome) {
+            from(files(propsRaiz.libsDir))
         }
     }
 }
 
-rootProject.name = propRaiz.buildlogicNome // nome da pasta do projeto
+rootProject.name = propsRaiz.buildlogicNome // nome da pasta do projeto

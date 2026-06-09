@@ -1,7 +1,6 @@
 // Declaração dos plugins
 // plugins {}
 // Atalhos para facilitar a leitura
-Object val = libs.versions.valores
 Object propsLocal = gradle.ext.propsLocal
 // Limpa todo o diretório de build
 tasks.register('cleanAndroid') {
