@@ -63,15 +63,9 @@ project.tasks.register('posBuildWeb') {
                     java.util.regex.Matcher matcher = (linha =~ /path="([^"]+)"/)
                     if (matcher.find()) {
                         File arquivoNoDisco = new File(matcher.group(1))
-                        if (arquivoNoDisco.exists()) {
-                            linhasLimpas << linha
-                        }
-                    } else {
-                        linhasLimpas << linha
-                    }
-                } else {
-                    linhasLimpas << linha
-                }
+                        if (arquivoNoDisco.exists()) { linhasLimpas << linha }
+                    } else { linhasLimpas << linha }
+                } else { linhasLimpas << linha }
             }
             xmlArq = linhasLimpas.join('\n')
 

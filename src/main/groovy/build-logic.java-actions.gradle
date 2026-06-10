@@ -3,8 +3,8 @@
 // Atalhos para facilitar a leitura
 Object propsLocal = gradle.ext.propsLocal
 // Provedores para acesso lazy às variáveis
-Provider<Boolean> eWindowsProv = providers.systemProperty('os.name').map { os ->
-    os.toLowerCase().contains('windows')
+Provider<Boolean> eWindowsProv = providers.systemProperty('os.name').map {
+    it.toLowerCase().contains('windows')
 }
 Provider<Directory> buildDirProv = project.layout.buildDirectory
 Provider<Directory> deployDirProv = buildDirProv.dir('distributions')
@@ -12,7 +12,7 @@ Provider<String> nomeAppProv = providers.gradleProperty('projNome')
 Provider<String> espNomeProv = providers.gradleProperty('espolioDir').orElse('espolio')
 Provider<String> verNumProv = providers.gradleProperty('appVerNum')
 Provider<Boolean> jarMagroProv = project.providers.gradleProperty('buildMagroWeb').map { 
-    String valor -> valor.toBoolean() }.orElse( project.providers.provider { 
+    it.toBoolean() }.orElse( project.providers.provider { 
         gradle.startParameter.taskNames.contains('submitWeb') //verifica qual tarefa chamou o build
     })
 // Tarefas personalizadas
@@ -81,7 +81,7 @@ tasks.register('orderLibs', Copy) {
 
     mustRunAfter tasks.named('orderJar') // obriga o JAR ser gerado primeiro
     
-    into deployDirProv.map { Directory deployDir -> deployDir.dir('lib') }
+    into deployDirProv.map { it.dir('lib') }
     from configurations.runtimeClasspath
     exclude 'spring-boot-jarmode-tools-*.jar'
 }
@@ -210,11 +210,11 @@ tasks.register('webIco') {
     group = 'Web Actions'
     description = 'Gera o icone.png para a aplicação Web'
 
-    Provider<RegularFile> fundoSvgProv = espNomeProv.map { String espDir ->
-        project.rootProject.layout.projectDirectory.file("${espDir}/icones/appBackground.svg")
+    Provider<RegularFile> fundoSvgProv = espNomeProv.map {
+        project.rootProject.layout.projectDirectory.file("${it}/icones/appBackground.svg")
     }
-    Provider<RegularFile> frenteSvgProv = espNomeProv.map { String espDir ->
-        project.rootProject.layout.projectDirectory.file("${espDir}/icones/appForeground.svg")
+    Provider<RegularFile> frenteSvgProv = espNomeProv.map {
+        project.rootProject.layout.projectDirectory.file("${it}/icones/appForeground.svg")
     }
     Provider<RegularFile> pngArqProv = buildDirProv.file('generated/webIcoRes/static/favicon.png')
     

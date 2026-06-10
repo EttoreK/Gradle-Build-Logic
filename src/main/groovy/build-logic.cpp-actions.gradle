@@ -6,11 +6,11 @@ Object propsLocal = gradle.ext.propsLocal
 Provider<Directory> buildDirProv = project.layout.buildDirectory
 Provider<Directory> instllDirProv = buildDirProv.dir('install/main')
 Provider<Directory> genDirProv = buildDirProv.dir('tmp/generated')
-Provider<Boolean> eWindowsProv = providers.systemProperty('os.name').map { String os ->
-    os.toLowerCase().contains('windows')
+Provider<Boolean> eWindowsProv = providers.systemProperty('os.name').map {
+    it.toLowerCase().contains('windows')
 }
-Provider<Boolean> eLinuxProv = providers.systemProperty('os.name').map { String os ->
-    os.toLowerCase().contains('linux')
+Provider<Boolean> eLinuxProv = providers.systemProperty('os.name').map {
+    it.toLowerCase().contains('linux')
 }
 Provider<String> appNomeProv = providers.gradleProperty('projNome')
 Provider<String> espNomeProv = providers.gradleProperty('espolioDir').orElse('espolio')
@@ -95,7 +95,7 @@ Closure<Void> copiaRes = { File destinoDir ->
     }
 }
 // Converte arquivos de espolio para hpp
-Closure<Void> embuteRes = { ->
+Closure<Void> embuteRes = {
     File espolioDir = espolioDirProv.get().asFile
     File saidaHPP = new File(genDirProv.get().asFile, "${espNomeProv.get()}.hpp")
 

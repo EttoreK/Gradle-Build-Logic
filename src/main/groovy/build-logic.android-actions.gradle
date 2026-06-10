@@ -25,7 +25,7 @@ tasks.register('posBuild') {
         return configurations.named(nomeConfig).flatMap { Configuration config ->
             config.incoming.artifactView { attributes {
                 attribute(Attribute.of('artifactType', String), 'android-classes-jar')
-            } }.files.elements
+            }}.files.elements
         }
     }
 

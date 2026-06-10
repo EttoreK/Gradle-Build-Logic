@@ -5,10 +5,13 @@ Object ver = libs.versions
 Object propsLocal = gradle.ext.propsLocal
 // Definição de provedores para acesso à valores de configuração e diretórios
 Provider<Directory> projDirProv = project.providers.provider { project.layout.projectDirectory }
-Provider<Boolean> eMacProv = providers.systemProperty('os.name').map { String os ->
-    os.toLowerCase().contains('mac')
+Provider<Boolean> eMacProv = providers.systemProperty('os.name').map {
+    it.toLowerCase().contains('mac')
 }
-Provider<Directory> srcDirProv = projDirProv.map { it.dir('src/main/swift') }
+Provider<String> appDirProv = project.providers.provider { 'src/main/swift' }
+Provider<Directory> srcDirProv = projDirProv.zip(appDirProv) { Directory diretorio, String dirApp -> 
+    diretorio.dir(dirApp) 
+}
 Provider<String> winDiscProv = project.providers.provider { 
     propsLocal.getProperty('unidade.win', 'C') 
 }
@@ -43,16 +46,16 @@ Provider<String> simuladorUsualProv = project.providers.provider {
 }
 Provider<String> nomeAppProv = providers.gradleProperty('projNome')
 Provider<String> xcodeProjProv = nomeAppProv.map { it + '.xcodeproj' }
-Provider<String> xcUnitTesteNomeProv = providers.gradleProperty('swiftTestDirUnit')
-Provider<String> xcUITesteNomeProv = providers.gradleProperty('swiftTestDirUI')
-Provider<String> xcIdPacoteAppProv = (project.providers.provider {appIdPacote}).zip(nomeAppProv){
+Provider<String> testeUnitNomeProv = providers.gradleProperty('swiftTestDirUnit')
+Provider<String> testeUiNomeProv = providers.gradleProperty('swiftTestDirUI')
+Provider<String> xcIdPacoteAppProv = (project.providers.provider { appIdPacote }).zip(nomeAppProv){
     String id, String app -> "${id}.${app.toLowerCase()}" 
 }
 Provider<String> vmDirProv = macDirProv.zip(nomeAppProv) { String dir, String app ->
     new File(dir, app).path.replace(File.separator, '/')
 }
-Provider<String> vmAppDirProv = vmDirProv.map { String dir -> 
-    new File(dir, 'app').path.replace(File.separator, '/') 
+Provider<String> vmAppDirProv = vmDirProv.map {
+    new File(it, 'app').path.replace(File.separator, '/') 
 }
 if (!macDirProv){ throw new GradleException('Nenhum diretório configurado para MacOs') }
 // Se necessário encapsula o comando em uma chamada ssh para a VM
@@ -92,11 +95,12 @@ project.ext.xcodeVars = [
     
     provs: [
         projDirProv: projDirProv,
+        appDirProv: appDirProv,
         srcDirProv: srcDirProv,
         nomeAppProv: nomeAppProv,
         xcodeProjProv: xcodeProjProv,
-        xcUnitTesteNomeProv: xcUnitTesteNomeProv,
-        xcUITesteNomeProv: xcUITesteNomeProv,
+        testeUnitNomeProv: testeUnitNomeProv,
+        testeUiNomeProv: testeUiNomeProv,
         xcIdPacoteAppProv: xcIdPacoteAppProv,
         vmDirProv: vmDirProv,
         vmAppDirProv: vmAppDirProv,
@@ -121,10 +125,6 @@ project.ext.xcodeVars = [
         runOnlyForDeploymentPostprocessing : '0', // 1sim/0não roda apenas quando em Archive
         defaultConfigurationIsVisible : '0', // flag de UI legada
 
-        bundleUI: 'bundle.ui-testing',
-        bundleUnit: 'bundle.unit-test',
-        bundleApp: 'application',
-        appDir: 'src/main/swift',
         testeDir: 'src/test/swift',
         resDir: 'src/main/resources'
     ]

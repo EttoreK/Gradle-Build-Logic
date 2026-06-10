@@ -34,12 +34,12 @@ Closure<String> pegaVersaoSwift = {
     return x.auxs.ver.swift.get() 
 }
 // Gera um UUID aleatório de 24 caracteres, diferente em cada geração, para builds limpas
-Closure<String> criaUuid = { ->
+Closure<String> criaUuid = {
     java.util.UUID.randomUUID().toString().replace('-', '').substring(0, 24).toUpperCase() 
 }
 // Pega um UUID existente do mapa uuids ou cria um novo se não existir
-Closure<String> pegaUuid = { Map uuidsMap, String... dir -> 
-    return dir[0..-2].inject(uuidsMap) { map, key -> map.get(key, [:]) }.get(dir[-1], criaUuid()) 
+Closure<String> pegaUuid = { Map uuidsMap, String... dir -> return dir[0..-2].inject(uuidsMap) { 
+    Map map, String key -> map.get(key, [:]) }.get(dir[-1], criaUuid()) 
 }
 // Pega ou cria uma lista de seções dentro do mapa ePBX
 Closure<List<String>> pegaLista = { Map map, String nome -> return map.computeIfAbsent(nome) {[]} }
@@ -590,7 +590,7 @@ Closure<Void> criaProjetoBasePBX = { Map uuidsMap, Map ePBXMap, Map atrbAlvosMap
     pegaLista(ePBXMap, 'PBXGroup') << criaPBXGroup( pegaUuid(uuidsMap, 'base', 'gpProduto'), 
         'Products', pegaLista(ePBXMap, 'productsGpChildren'))
     pegaLista(ePBXMap, 'PBXGroup') << criaPBXGroup(
-        pegaUuid(uuidsMap, 'base', 'gpFontes'), x.cons.appDir, gpFontes)
+        pegaUuid(uuidsMap, 'base', 'gpFontes'), x.provs.appDir.get(), gpFontes)
     List<String> testeFilhos = []
     ePBXMap.findAll { String idx, List<String> elementos -> idx.endsWith('Files') }.each { 
         String inx, List<String> listaArqs ->
@@ -730,17 +730,15 @@ tasks.register('xproj') {
         String xcodeProjDir = x.provs.xcodeProjProv.get()
         List<String> plataformas = ['iOS', 'macOS']
         Map<String, Object> appAlvosMap = [ 
-            nome: x.provs.nomeAppProv, tipo: x.cons.bundleApp, id: 'app' 
+            nome: x.provs.nomeAppProv, tipo: 'application', id: 'app' 
         ]
         List<Map<String, Object>> testAlvos = [ // Lista de alvos de teste
             [ 
-                nome: x.provs.xcUnitTesteNomeProv, tipo: x.cons.bundleUnit, 
-                sede: x.provs.nomeAppProv, id: 'unit',
-                arqs: x.provs.xcUnitTesteNomeProv.map { "${it}Files" } 
+                nome: x.provs.testeUnitNomeProv, tipo: 'bundle.unit-test', sede: x.provs.nomeAppProv, 
+                id: 'unit', arqs: x.provs.testeUnitNomeProv.map { "${it}Files" } 
             ], [ 
-                nome: x.provs.xcUITesteNomeProv, tipo: x.cons.bundleUI, 
-                sede: x.provs.nomeAppProv, id: 'ui',
-                arqs: x.provs.xcUITesteNomeProv.map { "${it}Files" } 
+                nome: x.provs.testeUiNomeProv, tipo: 'bundle.ui-testing', sede: x.provs.nomeAppProv, 
+                id: 'ui', arqs: x.provs.testeUiNomeProv.map { "${it}Files" } 
             ]
         ]
         List<Map<String, Object>> alvos = [ appAlvosMap ] + testAlvos 

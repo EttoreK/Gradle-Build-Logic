@@ -12,7 +12,7 @@ Provider<Directory> xcDirProv = project.providers.provider {
     project.rootProject.layout.projectDirectory.dir(x.provs.buildXDirProv.get()) 
 }
 // Busca um simulador de iOS disponível e armazena em cache
-Closure<String> pegaSimulador = { ->
+Closure<String> pegaSimulador = {
     String simuladorUsual = x.provs.simuladorUsualProv.get()
     String saida = ''
     // Executa o comando para listar os dispositivos simulados em JSON
@@ -72,7 +72,7 @@ tasks.register('syncToMac') { // caso necessário use "--rerun" para forçar a r
     description = 'Garante que o diretório existe, sincroniza os arquivos e ajusta as permissões.'
     group = 'MacOs Controller'
     onlyIf { !x.provs.eMacProv.get() } // executa apenas se não for MacOS local
-    inputs.files(x.provs.projDirProv.map { Directory dir -> dir.asFileTree.matching {
+    inputs.files(x.provs.projDirProv.map { it.asFileTree.matching {
         exclude 'build/**'
         exclude '.gradle/**'
         exclude 'build.gradle' // exclúi o build.gradle dentro de x.provs.projDirProv, se existir
@@ -199,9 +199,7 @@ Closure<Void> xbuild = { Task tarefa, String platforma, String sdk, String confi
     tarefa.inputs.dir x.provs.srcDirProv
     tarefa.inputs.dir x.provs.xcodeProjProv
     tarefa.inputs.files(tasks.named('syncToMac')) // garante sync antes do build, se remoto
-    tarefa.outputs.dir({ -> 
-        x.provs.eMacProv.get() ? pegaArquivos("${config}-${sdk}") : null
-    }).optional()
+    tarefa.outputs.dir({x.provs.eMacProv.get() ? pegaArquivos("${config}-${sdk}") : null}).optional()
 
     tarefa.doFirst { // Configura o comando de build do Xcode
         List<String> comandos = [
@@ -259,9 +257,7 @@ Closure<Void> xtest = { Task tarefa, String platforma, String sdk, Provider<Stri
     tarefa.description = "Executa os testes para ${platforma.toUpperCase()}"
     tarefa.group = 'Xcode Actions'
     // Dependência implícita do build
-    tarefa.inputs.files({ -> 
-        x.provs.eMacProv.get() ? pegaArquivos("Debug-${sdk}") : null 
-    }).optional()
+    tarefa.inputs.files({ x.provs.eMacProv.get() ? pegaArquivos("Debug-${sdk}") : null }).optional()
     tarefa.inputs.files(tasks.named('syncToMac')) // garante sync antes do teste, se remoto
 
     tarefa.doFirst {
@@ -300,11 +296,11 @@ Closure<Void> xtest = { Task tarefa, String platforma, String sdk, Provider<Stri
     }
 }
 // Registra as tarefas de teste para cada plataforma e configuração
-tasks.register('testMacosUnit', Exec) { xtest(it, 'macos', 'macosx', x.provs.xcUnitTesteNomeProv) }
-tasks.register('testMacosUi', Exec) { xtest(it, 'macos', 'macosx', x.provs.xcUITesteNomeProv) }
+tasks.register('testMacosUnit', Exec) { xtest(it, 'macos', 'macosx', x.provs.testeUnitNomeProv) }
+tasks.register('testMacosUi', Exec) { xtest(it, 'macos', 'macosx', x.provs.testeUiNomeProv) }
 tasks.register('testIosUnit', Exec) { 
-    xtest(it, 'ios', 'iphonesimulator', x.provs.xcUnitTesteNomeProv)}
-tasks.register('testIosUi', Exec) { xtest(it, 'ios', 'iphonesimulator', x.provs.xcUITesteNomeProv) }
+    xtest(it, 'ios', 'iphonesimulator', x.provs.testeUnitNomeProv)}
+tasks.register('testIosUi', Exec) { xtest(it, 'ios', 'iphonesimulator', x.provs.testeUiNomeProv) }
 // Cria um arquivo .xcarchive para distribuição
 Closure<Void> xarchive = { Task tarefa, String platforma, String sdk ->
     tarefa.description = "Cria um arquivo .xcarchive para ${platforma.toUpperCase()} (Release)"

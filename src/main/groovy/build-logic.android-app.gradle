@@ -63,9 +63,7 @@ androidComponents {
         variante.outputs.forEach { output -> // com.android.build.api.variant.VariantOutput
             // Só calcula isso no exato milissegundo em que for gerar o APK
             output.outputFileName.set(
-                output.versionCode.map { Integer versao ->
-                    "${projNomeProv.get()}-${versao}-${variante.name}.apk"
-                }
+                output.versionCode.map { "${projNomeProv.get()}-${it}-${variante.name}.apk" }
             )
         }
     }
