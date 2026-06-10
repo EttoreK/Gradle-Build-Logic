@@ -5,7 +5,7 @@ Object ver = libs.versions
 Object propsLocal = gradle.ext.propsLocal
 // Definição de provedores para acesso à valores de configuração e diretórios
 Provider<Directory> projDirProv = project.providers.provider { project.layout.projectDirectory }
-Provider<Boolean> eMacProv = providers.systemProperty('os.name').map { os ->
+Provider<Boolean> eMacProv = providers.systemProperty('os.name').map { String os ->
     os.toLowerCase().contains('mac')
 }
 Provider<Directory> srcDirProv = projDirProv.map { it.dir('src/main/swift') }
@@ -46,7 +46,7 @@ Provider<String> xcodeProjProv = nomeAppProv.map { it + '.xcodeproj' }
 Provider<String> xcUnitTesteNomeProv = providers.gradleProperty('swiftTestDirUnit')
 Provider<String> xcUITesteNomeProv = providers.gradleProperty('swiftTestDirUI')
 Provider<String> xcIdPacoteAppProv = (project.providers.provider {appIdPacote}).zip(nomeAppProv){
-    id, app -> "${id}.${app.toLowerCase()}" 
+    String id, String app -> "${id}.${app.toLowerCase()}" 
 }
 Provider<String> vmDirProv = macDirProv.zip(nomeAppProv) { String dir, String app ->
     new File(dir, app).path.replace(File.separator, '/')
@@ -81,6 +81,7 @@ Closure<List<String>> comandoRemoto = { List<String> cmds ->
             "\"cd \'${vmAppDirProv.get()}\' && ${cmdRemotos.join(' ')}\""
         ]
     }
+    println '>>> fez get'
 }
 // API / Exportação das variáveis
 project.ext.xcodeVars = [

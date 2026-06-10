@@ -11,120 +11,54 @@ Provider<String> vmXcodeDirProv = x.provs.vmDirProv.zip(x.provs.buildXDirProv) {
 Provider<Directory> xcDirProv = project.providers.provider { 
     project.rootProject.layout.projectDirectory.dir(x.provs.buildXDirProv.get()) 
 }
-// Busca um simulador de iOS disponível para testes e armazena em cache
-Provider<String> iosSim = project.providers.gradleProperty('simIos').orElse(project.providers.exec {
-        commandLine(x.auxs.comandoRemoto(['xcrun', 'simctl list -j devices']))
-        ignoreExitValue = true // ignora falhas do comando
-    }.standardOutput.asText.map { String saida -> // Só roda se o comando acabar e devolver um texto
-        println '\n>>> EXECUTANDO BUSCA DE SIMULADOR <<<\n'
-        
-        if (saida.isBlank()) {
-            println '>> AVISO: falha ao pegar simulador. Tentando fallback.'
-            return null // aciona o orElse()
+// Busca um simulador de iOS disponível e armazena em cache
+Closure<String> pegaSimulador = { ->
+    String simuladorUsual = x.provs.simuladorUsualProv.get()
+    String saida = ''
+    // Executa o comando para listar os dispositivos simulados em JSON
+    try { // O try/catch age como ignoreExitValue, se o comando falhar a saida continua vazia
+        ByteArrayOutputStream saidaStd = new ByteArrayOutputStream()
+        ByteArrayOutputStream erroStd = new ByteArrayOutputStream() // captura o erro
+        Process processo = x.auxs.comandoRemoto(['xcrun', 'simctl list -j devices']).execute()
+        processo.waitForProcessOutput(saidaStd, erroStd) // pega a saída e espera o comando terminar
+        String erro = erroStd.toString().trim()
+        saida = saidaStd.toString().trim()
+
+        if (!erro.isEmpty()) { println ">> ERRO: falha ao listar simuladores. ${erro}" }
+    } catch (Exception e) { 
+        println ">> AVISO: falha ao executar. Usando '${simuladorUsual}'. ${e.message}" 
+    }
+    // Verifica se o comando produziu alguma saída
+    if (saida.isBlank()) {
+        println ">> AVISO: falha ao pegar simulador instalado. Usando '${simuladorUsual}'."
+        return simuladorUsual
+    }
+    // Pega todos os dispositivos de todos os runtimes em uma única lista
+    try {
+        Map<String, Object> jsonSaidaMap = new groovy.json.JsonSlurper().parseText(saida)
+        List<Map<String, Object>> aparelhos = jsonSaidaMap.devices.values().flatten()
+        // PRIORIDADE 1: Encontrar qualquer simulador que já esteja ativo ('Booted')
+        Map<String, Object> aparelhoAtivoMap = aparelhos.find { it.state == 'Booted' }
+        if (aparelhoAtivoMap) { return aparelhoAtivoMap.name }
+        // PRIORIDADE 2: Se nenhum estiver ativo, encontrar o primeiro iPhone ou iPad disponível
+        Map<String, Object> aparelhoPreparadoMap = aparelhos.find {
+            it.isAvailable && (it.name.startsWith('iPhone') || it.name.startsWith('iPad'))
         }
-        
-        try {
-            Map<String, Object> jsonSaidaMap = new groovy.json.JsonSlurper().parseText(saida)
-            List<Map<String, Object>> aparelhos = jsonSaidaMap.devices.values().flatten()
-            // PRIORIDADE 1: Aparelho ativo
-            Map<String, Object> aparelhoAtivoMap = aparelhos.find { it.state == 'Booted' }
-            if (aparelhoAtivoMap) { return aparelhoAtivoMap.name }
-            // PRIORIDADE 2: Primeiro iPhone/iPad disponível
-            Map<String, Object> aparelhoPreparadoMap = aparelhos.find {
-                it.isAvailable && (it.name.startsWith('iPhone') || it.name.startsWith('iPad'))
-            }
-            if (aparelhoPreparadoMap) { return aparelhoPreparadoMap.name }
-        } catch (Exception e) { println ">> AVISO: falha de leitura do JSON. ${e.message}" }
-        return null 
-    }.orElse(x.provs.simuladorUsualProv) // se não encontgrar
-)
-// Provider<String> iosSim = project.providers.gradleProperty('simIos').orElse(
-//     project.providers.provider { 
-//     println '\n>>> EXECUTANDO <<<\n'
-//     String simuladorUsual = x.provs.simuladorUsualProv.get()
-//     String saida = ''
-//     // Executa o comando para listar os dispositivos simulados em JSON
-//     try { // O try/catch age como ignoreExitValue, se o comando falhar a saida continua vazia
-//         ByteArrayOutputStream saidaStd = new ByteArrayOutputStream()
-//         ByteArrayOutputStream erroStd = new ByteArrayOutputStream() // captura o erro
-//         Process processo = x.auxs.comandoRemoto(['xcrun', 'simctl list -j devices']).execute()
-//         processo.waitForProcessOutput(saidaStd, erroStd) // pega a saída e espera terminar
-//         String erro = erroStd.toString().trim()
-//         saida = saidaStd.toString().trim()
-
-//         if (!erro.isEmpty()) { println ">> ERRO: falha ao listar simuladores. ${erro}" }
-//     } catch (Exception e) { 
-//         println ">> AVISO: falha ao executar. Usando '${simuladorUsual}'. ${e.message}" 
-//     }
-//     // Verifica se o comando produziu alguma saída
-//     if (saida.isBlank()) {
-//         println ">> AVISO: falha ao pegar simulador instalado. Usando '${simuladorUsual}'."
-//         return simuladorUsual
-//     }
-//     // Pega todos os dispositivos de todos os runtimes em uma única lista
-//     try {
-//         Map<String, Object> jsonSaidaMap = new groovy.json.JsonSlurper().parseText(saida)
-//         List<Map<String, Object>> aparelhos = jsonSaidaMap.devices.values().flatten()
-//         // PRIORIDADE 1: Encontrar qualquer simulador que já esteja ativo ('Booted')
-//         Map<String, Object> aparelhoAtivoMap = aparelhos.find { it.state == 'Booted' }
-//         if (aparelhoAtivoMap) { return aparelhoAtivoMap.name }
-//         // PRIORIDADE 2: Se nenhum estiver ativo, encontrar o primeiro iPhone ou iPad disponível
-//         Map<String, Object> aparelhoPreparadoMap = aparelhos.find {
-//             it.isAvailable && (it.name.startsWith('iPhone') || it.name.startsWith('iPad'))
-//         }
-//         if (aparelhoPreparadoMap) { return aparelhoPreparadoMap.name }
-//     } catch (Exception e) { 
-//         println ">> AVISO: falha de leitura. Usando '${simuladorUsual}'. ${e.message}" 
-//     }
-//     return simuladorUsual
-// })
-// String cacheSimulador // cache manual para pegaSimulador
-// Closure<String> pegaSimulador = { ->
-//     if (cacheSimulador) { return cacheSimulador } // Retorna o valor em cache se exisitr
-//     String simuladorUsual = x.provs.simuladorUsualProv.get()
-//     String saida = ''
-//     // Executa o comando para listar os dispositivos simulados em JSON
-//     try { // O try/catch age como ignoreExitValue, se o comando falhar a saida continua vazia
-//         ByteArrayOutputStream saidaStd = new ByteArrayOutputStream()
-//         ByteArrayOutputStream erroStd = new ByteArrayOutputStream() // captura o erro
-//         Process processo = x.auxs.comandoRemoto(['xcrun', 'simctl list -j devices']).execute()
-//         processo.waitForProcessOutput(saidaStd, erroStd) // pega a saída e espera o comando terminar
-//         String erro = erroStd.toString().trim()
-//         saida = saidaStd.toString().trim()
-
-//         if (!erro.isEmpty()) { println ">> ERRO: falha ao listar simuladores. ${erro}" }
-//     } catch (Exception e) { 
-//         println ">> AVISO: falha ao executar. Usando '${simuladorUsual}'. ${e.message}" 
-//     }
-//     // Verifica se o comando produziu alguma saída
-//     if (saida.isBlank()) {
-//         println ">> AVISO: falha ao pegar simulador instalado. Usando '${simuladorUsual}'."
-//         return (cacheSimulador = simuladorUsual)
-//     }
-//     // Pega todos os dispositivos de todos os runtimes em uma única lista
-//     try {
-//         Map<String, Object> jsonSaidaMap = new groovy.json.JsonSlurper().parseText(saida)
-//         List<Map<String, Object>> aparelhos = jsonSaidaMap.devices.values().flatten()
-//         // PRIORIDADE 1: Encontrar qualquer simulador que já esteja ativo ('Booted')
-//         Map<String, Object> aparelhoAtivoMap = aparelhos.find { it.state == 'Booted' }
-//         if (aparelhoAtivoMap) { return (cacheSimulador = aparelhoAtivoMap.name) }
-//         // PRIORIDADE 2: Se nenhum estiver ativo, encontrar o primeiro iPhone ou iPad disponível
-//         Map<String, Object> aparelhoPreparadoMap = aparelhos.find {
-//             it.isAvailable && (it.name.startsWith('iPhone') || it.name.startsWith('iPad'))
-//         }
-//         if (aparelhoPreparadoMap) { return (cacheSimulador = aparelhoPreparadoMap.name) }
-//     } catch (Exception e) { 
-//         println ">> AVISO: falha de leitura. Usando '${simuladorUsual}'. ${e.message}" 
-//     }
-//     return (cacheSimulador = simuladorUsual)
-// }
+        if (aparelhoPreparadoMap) { return aparelhoPreparadoMap.name }
+    } catch (Exception e) { 
+        println ">> AVISO: falha de leitura. Usando '${simuladorUsual}'. ${e.message}" 
+    }
+    return simuladorUsual
+}
 // Retorna um caminho absoluto de diretório, seja local ou remoto
 Closure<String> pegaDir = { String sobDir, String subDir ->
-    if (x.provs.eMacProv.get()) {return xcDirProv.get().dir(sobDir).dir(subDir).asFile.absolutePath} 
+    if (x.provs.eMacProv.get()) { 
+        return xcDirProv.get().dir(sobDir).dir(subDir).asFile.absolutePath 
+    } 
     else { return "${vmXcodeDirProv.get()}/${sobDir}/${subDir}" }
 }
 // Retorna arquivos para os artefatos de build. Retorna vazio se estiver em modo remoto
-Closure<Provider<FileCollection>> pegaArquivos = {String subDir ->
+Closure<Provider<FileCollection>> pegaArquivos = { String subDir ->
     if (x.provs.eMacProv.get()) {
         return project.layout.files(xcDirProv.get().dir('products').dir(subDir))
     } else { return project.layout.files(new File("${vmXcodeDirProv.get()}/products/${subDir}")) }
@@ -193,7 +127,7 @@ tasks.register('syncToMac') { // caso necessário use "--rerun" para forçar a r
 
         File geradoDir = xcDirProv.get().dir('generated').asFile
         if (geradoDir.exists()) {
-            String vmBuildXCodeDir = "${vmAppDir}/${x.provs.buildXDirProv.get()}"
+            String vmBuildXCodeDir = "${vmProjDir}/${x.provs.buildXDirProv.get()}"
             // Garante que a pasta build/xcode exista na VM antes de copiar
             x.auxs.comandoRemoto(
                 ['mkdir', '-p', "\'${vmBuildXCodeDir}\'"]
@@ -228,8 +162,7 @@ tasks.register('cleanMac', Exec) {
     outputs.upToDateWhen { false } // sempre executa 
 
     doFirst {
-        String simulador = iosSim.get()
-        // String simulador = pegaSimulador()
+        String simulador = pegaSimulador()
         String donoMac = '\$(getconf DARWIN_USER_CACHE_DIR)' // pra reduzir o tamanho da linha
         String dirXc = x.provs.eMacProv.get() ? 
             xcDirProv.get().asFile.absolutePath : vmXcodeDirProv.get()
@@ -281,7 +214,7 @@ Closure<Void> xbuild = { Task tarefa, String platforma, String sdk, String confi
         ]
         // Caso iOS, adiciona o destino do simulador
         if (platforma == 'ios') { comandos.addAll([ 
-            '-destination', "platform=\'iOS Simulator\',name=\'${iosSim.get()}\'" 
+            '-destination', "platform=\'iOS Simulator\',name=\'${pegaSimulador()}\'" 
         ])} else { comandos.addAll([ '-destination', "platform=macOS,name=\'My Mac\'" ]) }
 
         tarefa.commandLine = x.auxs.comandoRemoto(comandos)
@@ -289,7 +222,9 @@ Closure<Void> xbuild = { Task tarefa, String platforma, String sdk, String confi
 }
 // Registra as tarefas de build para cada plataforma e configuração
 tasks.register('buildMacos', Exec) { xbuild(it, 'macos', 'macosx', 'Debug') }
+tasks.register('buildMacosRelease', Exec) { xbuild(it, 'macos', 'macosx', 'Release') }
 tasks.register('buildIos', Exec) { xbuild(it, 'ios', 'iphonesimulator', 'Debug') }
+tasks.register('buildIosRelease', Exec) { xbuild(it, 'ios', 'iphonesimulator', 'Release') }
 // Cria tarefas para executar o app compilado
 Closure<Void> xrun = { Task tarefa, String platforma, String sdk, String config ->
     tarefa.description = "Executa o app compilado para ${platforma.toUpperCase()} (${config})"
@@ -304,8 +239,7 @@ Closure<Void> xrun = { Task tarefa, String platforma, String sdk, String config 
         String app = "${pegaDir('products', "${config}-${sdk}")}/${x.provs.nomeAppProv.get()}.app"
         // Caso iOS, usa simctl para instalar e lançar no simulador
         if (platforma == 'ios') { 
-            String simulador = iosSim.get()
-            // String simulador = pegaSimulador()
+            String simulador = pegaSimulador()
             comandos.addAll([
             'xcrun', 'simctl boot', "\'${simulador}\'", '|| true &&',
             'open', '-a Simulator', '|| true &&',
@@ -359,7 +293,7 @@ Closure<Void> xtest = { Task tarefa, String platforma, String sdk, Provider<Stri
         ]
         // Caso iOS, adiciona o destino do simulador
         if (platforma == 'ios') { 
-            comandos.addAll(['-destination', "\'platform=iOS Simulator,name=${iosSim.get()}\'"])
+            comandos.addAll(['-destination', "\'platform=iOS Simulator,name=${pegaSimulador()}\'"])
         } else { comandos.addAll(['-destination', "\'platform=macOS,name=My Mac\'"]) }
 
         tarefa.commandLine = x.auxs.comandoRemoto(comandos)

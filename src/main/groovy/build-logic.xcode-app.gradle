@@ -446,7 +446,7 @@ Closure<Void> descobreArqs = { Map ePBXMap, File testeDir, File baseDir, File re
     // Adiciona a pasta dos ícones
     File xcassetsPaiDir = xcassetsDirProv.get().getAsFile().parentFile
     String buildXDir = x.provs.buildXDirProv.get()
-    pegaRes(xcassetsPaiDir, xcassetsPaiDir, 'recursosLocal', "${buildXDir}/generated/")
+    pegaRes(xcassetsPaiDir, xcassetsPaiDir, 'recursosLocal', "../${buildXDir}/generated/")
 }
 // Processa arquivos fonte e de recursos, criando referências PBX
 Closure<Map> processaReferencias = { Map uuidsMap, Map ePBXMap, List alvos, Map arqsTesteMap ->
@@ -795,7 +795,7 @@ tasks.register('xIcone') {
         if (!fundoSVG.exists()) throw new GradleException('Faltou o SVG de Fundo!')
         if (!frenteSVG.exists()) throw new GradleException('Faltou o SVG de Frente!')
         // Cria a estrutura exata do Xcode: Assets.xcassets/AppIcon.xcassetsDir
-        File iconeDir = new File(xcassetsDir, 'AppIcon.xcassetsDir')
+        File iconeDir = new File(xcassetsDir, 'AppIcon.appiconset')
         if (!iconeDir.exists()) iconeDir.mkdirs()
 
         List<String> mesclaSVG = [
@@ -817,22 +817,28 @@ tasks.register('xIcone') {
         new File(iconeDir, 'Contents.json').text = """
         {
             \"images\" : [
-                { 
-                    \"filename\" : \"app_apple_1024.png\", 
-                    \"idiom\" : \"universal\", 
-                    \"platform\" : \"ios\", 
-                    \"size\" : \"1024x1024\" 
+                {
+                    \"filename\" : \"app_apple_1024.png\",
+                    \"idiom\" : \"universal\",
+                    \"platform\" : \"ios\",
+                    \"size\" : \"1024x1024\"
                 },
-                { 
-                    \"filename\" : \"app_apple_1024.png\", 
-                    \"idiom\" : \"mac\", 
-                    \"size\" : \"512x512\", 
-                    \"scale\" : \"2x\" 
+                {
+                    \"filename\" : \"app_apple_1024.png\",
+                    \"idiom\" : \"mac\",
+                    \"scale\" : \"1x\",
+                    \"size\" : \"512x512\"
+                },
+                {
+                    \"filename\" : \"app_apple_1024.png\",
+                    \"idiom\" : \"mac\",
+                    \"size\" : \"512x512\",
+                    \"scale\" : \"2x\"
                 }
             ],
-            \"info\" : { 
-                \"author\" : \"xcode\", 
-                \"version\" : 1 
+            \"info\" : {
+                \"author\" : \"xcode\",
+                \"version\" : 1
             }
         }""".stripIndent().trim()
     }

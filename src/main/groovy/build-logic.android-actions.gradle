@@ -185,7 +185,7 @@ tasks.register('runAndroid', Exec) {
             }
             // Pega a primeira linha, primeiro simulador encontrado
             return texto.lines().findFirst().map { it.trim() }.orElse(null)
-        }.orElse(project.providers.provider {propsLocal.getProperty('simulador.android')})
+        }.orElse(project.providers.provider { propsLocal.getProperty('simulador.android') })
     )
 
     doFirst {
