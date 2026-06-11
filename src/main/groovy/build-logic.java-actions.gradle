@@ -263,7 +263,7 @@ tasks.register('submitWeb') {
         String sede = propsLocal.getProperty('srv.sede')
         String dir = propsLocal.getProperty('srv.dir')
         String servico = propsLocal.getProperty('srv.servico')
-        String appJar = nomeAppProv.get().toString().toLowerCase() + '.jar'
+        String appJar = "${nomeAppProv.get().toString().toLowerCase()}.jar"
 
         if (!dono || !sede || !dir) {
             throw new GradleException('Faltam variáveis do servidor no local.properties!')

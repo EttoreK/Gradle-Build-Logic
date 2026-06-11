@@ -45,7 +45,7 @@ Provider<String> simuladorUsualProv = project.providers.provider {
     propsLocal.getProperty('simulador.ios')
 }
 Provider<String> nomeAppProv = providers.gradleProperty('projNome')
-Provider<String> xcodeProjProv = nomeAppProv.map { it + '.xcodeproj' }
+Provider<String> xcodeProjProv = nomeAppProv.map { "${it}.xcodeproj" }
 Provider<String> testeUnitNomeProv = providers.gradleProperty('swiftTestDirUnit')
 Provider<String> testeUiNomeProv = providers.gradleProperty('swiftTestDirUI')
 Provider<String> xcIdPacoteAppProv = (project.providers.provider { appIdPacote }).zip(nomeAppProv){
@@ -84,7 +84,6 @@ Closure<List<String>> comandoRemoto = { List<String> cmds ->
             "\"cd \'${vmAppDirProv.get()}\' && ${cmdRemotos.join(' ')}\""
         ]
     }
-    println '>>> fez get'
 }
 // API / Exportação das variáveis
 project.ext.xcodeVars = [

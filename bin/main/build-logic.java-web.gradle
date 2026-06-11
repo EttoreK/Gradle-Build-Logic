@@ -78,7 +78,7 @@ project.tasks.register('posBuildWeb') {
 
             if (novasBib.length() > 0 || xmlArq != classpathArq.text) {
                 if (novasBib.length() > 0) {
-                    xmlArq = xmlArq.replace('</classpath>', novasBib.toString() + '</classpath>')
+                    xmlArq = xmlArq.replace('</classpath>', "${novasBib.toString()}</classpath>")
                 }
                 classpathArq.text = xmlArq
                 println ">> INFO: .classpath de ${providers.gradleProperty('projNome')} atualizado."

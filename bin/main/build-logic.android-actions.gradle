@@ -117,7 +117,7 @@ tasks.register('posBuild') {
                 }
             }
             // Loop para encontrar todos os .jar de aarLibraries
-            File aarFolder = new File(compDir + '/aarLibraries')
+            File aarFolder = new File("${compDir}/aarLibraries")
             if (aarFolder.exists()) {
                 aarFolder.eachFile { File arq ->
                     if (arq.name.endsWith('.jar')) {
@@ -133,7 +133,7 @@ tasks.register('posBuild') {
             // Gravação do arquivo
             if (novasBib.length() > 0 || xmlArq != classpathArq.text) {
                 if (novasBib.length() > 0) {
-                    xmlArq = xmlArq.replace('</classpath>', novasBib.toString() + '</classpath>')
+                    xmlArq = xmlArq.replace('</classpath>', "${novasBib.toString()}</classpath>")
                 }
                 classpathArq.text = xmlArq
             }

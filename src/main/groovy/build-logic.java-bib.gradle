@@ -41,7 +41,7 @@ project.afterEvaluate {
         }
         // Gravação do arquivo, insere as novas entradas antes do fechamento da tag </classpath>
         if (eAlterado) {
-            xmlArq = xmlArq.replace('</classpath>', novasEntradas.toString() + '</classpath>')
+            xmlArq = xmlArq.replace('</classpath>', "${novasEntradas.toString()}</classpath>")
             classpathArq.write(xmlArq)
             println ">> INFO: .classpath de ${projNome} (Bib) atualizado com sucesso."
         }

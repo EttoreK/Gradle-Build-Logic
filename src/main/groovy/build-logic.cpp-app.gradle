@@ -18,7 +18,7 @@ application {
 }
 // Configuração dos Testes
 unitTest {
-    baseName.set(projNomeProv.map { it + 'Test' }) // nome do produto de tests gerado
+    baseName.set(projNomeProv.map { "${it}Test" }) // nome do produto de tests gerado
 }
 // Biblioteras para serem usadas no código
 // dependencies {}
