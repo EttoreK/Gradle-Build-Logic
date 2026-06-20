@@ -4,11 +4,5 @@ plugins {
 }
 
 dependencies {
-    implementation (libs.proguard)
-}
-// Alteração da saída de build (if para burlar os erros do VSCode)
-if (gradle.parent != null) {
-    layout.buildDirectory = project.gradle.parent.rootProject.layout.projectDirectory.dir(
-        gradle.ext.buildDirBuildLogic
-    )
+    implementation libs.proguard
 }

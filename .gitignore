@@ -1,3 +1,4 @@
 # Ignora o cache do Gradle do projeto
 .gradle
 .classpath
+build

@@ -1,16 +1,16 @@
 // Busca um arquivo que possua a propriedade buildlogicNome para definir como propsRaiz
 final Properties propsRaiz = new Properties()
-FileInputStream fileInputStream = null
 settingsDir.parentFile.listFiles().any { final File arq ->
     if (arq.isFile() && arq.canRead()) {
-        fileInputStream = new FileInputStream(arq)
-        propsRaiz.load(fileInputStream)
+        arq.withInputStream { propsRaiz.load(it) }
         if (propsRaiz.buildlogicNome != null) { return true } 
         else { propsRaiz.clear() }
     }
 }
-fileInputStream.close();
-gradle.ext.buildDirBuildLogic = propsRaiz.buildDirBuildLogic // compartilha para o build-gradle
+// Alteração da saída de build do build-logic
+gradle.rootProject { if (propsRaiz.buildDirBuildLogic) { it.layout.buildDirectory.set(
+    new File(settingsDir.parentFile, propsRaiz.buildDirBuildLogic)
+)}}
 // Resolução de dependências
 dependencyResolutionManagement {
     // Aonde buscar para cumprir as dependências

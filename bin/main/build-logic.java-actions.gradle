@@ -1,7 +1,11 @@
 // Declaração de plugins
 // plugins {}
 // Atalhos para facilitar a leitura
-Object propsLocal = gradle.ext.propsLocal
+Provider<Map<String, String>> propsProv = providers.of(LeitorProps) { 
+    parameters.propertiesFile = rootProject.layout.projectDirectory.file(
+        providers.gradleProperty('localPropertiesNome')
+    )
+}
 // Provedores para acesso lazy às variáveis
 Provider<Boolean> eWindowsProv = providers.systemProperty('os.name').map {
     it.toLowerCase().contains('windows')
@@ -232,8 +236,8 @@ tasks.register('webIco') {
         if (!buildDir.exists()) buildDir.mkdirs()
         
         Process processo = [
-            eWindowsProv.get() 
-            ? "${propsLocal.getProperty('unidade.win', 'C')}:/msys64/ucrt64/bin/magick.exe" 
+            eWindowsProv.get() ? 
+                "${propsProv.get().getOrDefault('unidade.win', 'C')}:/msys64/ucrt64/bin/magick.exe" 
             : 'magick',
             '-background', 'none',
             fundoSVG.absolutePath, 
@@ -259,10 +263,10 @@ tasks.register('submitWeb') {
     inputs.files(tasks.named('orderLibs'))
 
     doLast {
-        String dono = propsLocal.getProperty('srv.dono')
-        String sede = propsLocal.getProperty('srv.sede')
-        String dir = propsLocal.getProperty('srv.dir')
-        String servico = propsLocal.getProperty('srv.servico')
+        String dono = propsProv.get().get('srv.dono')
+        String sede = propsProv.get().get('srv.sede')
+        String dir = propsProv.get().get('srv.dir')
+        String servico = propsProv.get().get('srv.servico')
         String appJar = "${nomeAppProv.get().toString().toLowerCase()}.jar"
 
         if (!dono || !sede || !dir) {

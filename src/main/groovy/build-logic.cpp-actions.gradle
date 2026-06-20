@@ -1,7 +1,11 @@
 // Declaração dos plugins
 // plugins {}
 // Atalhos para facilitar a leitura
-Object propsLocal = gradle.ext.propsLocal
+Provider<Map<String, String>> propsProv = providers.of(LeitorProps) { 
+    parameters.propertiesFile = rootProject.layout.projectDirectory.file(
+        providers.gradleProperty('localPropertiesNome')
+    )
+}
 // Definição de provedores para acesso à valores de configuração e diretórios
 Provider<Directory> buildDirProv = project.layout.buildDirectory
 Provider<Directory> instllDirProv = buildDirProv.dir('install/main')
@@ -14,15 +18,13 @@ Provider<Boolean> eLinuxProv = providers.systemProperty('os.name').map {
 }
 Provider<String> appNomeProv = providers.gradleProperty('projNome')
 Provider<String> espNomeProv = providers.gradleProperty('espolioDir').orElse('espolio')
-Provider<String> linDonoProv = project.providers.provider { propsLocal.getProperty('lin.dono') }
-Provider<String> linSedeProv = project.providers.provider { propsLocal.getProperty('lin.sede') }
-Provider<String> linDirProv = project.providers.provider { propsLocal.getProperty('lin.dir') }
-Provider<String> winDonoProv = project.providers.provider { propsLocal.getProperty('win.dono') }
-Provider<String> winSedeProv = project.providers.provider { propsLocal.getProperty('win.sede') }
-Provider<String> winDirProv = project.providers.provider { propsLocal.getProperty('win.dir') }
-Provider<String> winDiscProv = project.providers.provider { 
-    propsLocal.getProperty('unidade.win', 'C') 
-}
+Provider<String> linDonoProv = propsProv.map { it.get('lin.dono') }
+Provider<String> linSedeProv = propsProv.map { it.get('lin.sede') }
+Provider<String> linDirProv = propsProv.map { it.get('lin.dir') }
+Provider<String> winDonoProv = propsProv.map { it.get('win.dono') }
+Provider<String> winSedeProv = propsProv.map { it.get('win.sede') }
+Provider<String> winDirProv = propsProv.map { it.get('win.dir') }
+Provider<String> winDiscProv = propsProv.map { it.getOrDefault('unidade.win', 'C') }
 Provider<Directory> espolioDirProv = project.rootProject.layout.projectDirectory.dir(espNomeProv)
 Provider<Directory> projDirProv = project.providers.provider { project.layout.projectDirectory }
 // Se necessário encapsula o comando em uma chamada ssh para a VM
@@ -401,12 +403,15 @@ tasks.register('criaEspolio') {
     doLast { embuteRes() }
 }
 // Verifica e instala dependências automaticamente
-tasks.register('instalaDeps', Exec) {
+tasks.register('instalaDeps') {
     group = 'setup'
-    description = 'Instala dependências do Pacman via MSYS2 Bash'
+    description = 'Instala dependências do Pacman via MSYS2 Bash ou Bash'
     outputs.upToDateWhen { false } // sempre executa
 
     doLast {
+        Process processoDeps
+        ByteArrayOutputStream saidaStd
+        ByteArrayOutputStream erroStd
         if (eWindowsProv.get()) {
             println '>> INFO: Instalando dependências do Windows...'
             List<String> winDeps = [
@@ -421,11 +426,12 @@ tasks.register('instalaDeps', Exec) {
             ]
             // Chamando o pacman do msys2
             try {
-                commandLine comandoRemoto('windows', [
+                processoDeps = comandoRemoto('windows', [
                     "${winDiscProv.get()}:/msys64/usr/bin/bash.exe -l -c",
                     "\"pacman -S --needed --noconfirm ${winDeps.join(' ')}\""
-                ])
-            } catch(Exception e) { println '>> AVISO: VM Windows indisponível.' }
+                ]).execute()
+                processoDeps.waitForProcessOutput(saidaStd, erroStd)
+            } catch(Exception e) { println ">> AVISO: VM Windows indisponível.\n${erroStd}" }
         } else {
             println '>> INFO: Instalando dependências do Linux...'
             List<String> linDeps = [
@@ -442,10 +448,11 @@ tasks.register('instalaDeps', Exec) {
                 'librsvg2-bin'
             ]
             try {
-                commandLine comandoRemoto('linux', 
-                    ["sudo bash -c \'apt update && apt install -y ${linDeps.join(' ')}\'"]
-                )
-            } catch(Exception e) { println '>> AVISO: VM Linux indisponível.' }
+                processoDeps = comandoRemoto('linux', [
+                    "sudo bash -c \'apt update && apt install -y ${linDeps.join(' ')}\'"
+                ]).execute()
+                processoDeps.waitForProcessOutput(saidaStd, erroStd)
+            } catch(Exception e) { println ">> AVISO: VM Linux indisponível.\n ${erroStd}" }
         }
     }
 }

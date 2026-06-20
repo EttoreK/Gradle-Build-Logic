@@ -1,7 +1,11 @@
 // Declaração dos plugins
 // plugins {}
 // Atalhos para facilitar a leitura
-Object propsLocal = gradle.ext.propsLocal
+Provider<Map<String, String>> propsProv = providers.of(LeitorProps) { 
+    parameters.propertiesFile = rootProject.layout.projectDirectory.file(
+        providers.gradleProperty('localPropertiesNome')
+    )
+}
 // Limpa todo o diretório de build
 tasks.register('cleanAndroid') {
     group = 'WebActions'
@@ -158,14 +162,20 @@ tasks.register('runSimulatorAndroid', Exec){
     Provider<String> projNomeProv = providers.gradleProperty('projNome')
     Provider<String> appIdProv = providers.gradleProperty('appIdPacote')
 
-    doFirst { 
-        String pacote = appIdProv.get() + '.'
-        String app = projNomeProv.get().toLowerCase()
-        commandLine 'adb', 'shell', 'am', 'start', '-n', "${pacote}${app}/${pacote}app.MainActivity"
-    }
+    executable = 'adb'
+    argumentProviders.add(new CommandLineArgumentProvider() {
+        @Input Provider<String> getProjNome() { projNomeProv }
+        @Input Provider<String> getAppId() { appIdProv }
+
+        @Override Iterable<String> asArguments() {
+            String pacote = getAppId().get() + '.'
+            String app = getProjNome().get().toLowerCase()
+            return ['shell', 'am', 'start', '-n', "${pacote}${app}/${pacote}app.MainActivity"]
+        }
+    })
 }
 // Inicia o primeiro emulador android encontrado
-tasks.register('runAndroid', Exec) {
+tasks.register('runAndroid') {
     group = 'androidActions'
     description = 'Executa o simulador Android e roda o programa'
     finalizedBy tasks.named('installDebug')
@@ -185,7 +195,7 @@ tasks.register('runAndroid', Exec) {
             }
             // Pega a primeira linha, primeiro simulador encontrado
             return texto.lines().findFirst().map { it.trim() }.orElse(null)
-        }.orElse(project.providers.provider { propsLocal.getProperty('simulador.android') })
+        }.orElse(project.providers.provider { propsProv.get().get('simulador.android') })
     )
 
     doFirst {
@@ -209,7 +219,7 @@ tasks.register('runAndroid', Exec) {
         // Detecção básica de SO para rodar o comando 'start' (Windows) ou '&' (Linux/Mac)
         if (System.getProperty('os.name').toLowerCase().contains('windows')) {
             String filtro = 'findstr /V ' + saidaFiltro.collect { 
-                "/${propsLocal.getProperty('unidade.win', 'C')}:\"${it}\"" 
+                "/${propsProv.get().getOrDefault('unidade.win', 'C')}:\"${it}\"" 
             }.join(' ')
             new ProcessBuilder(
                 'cmd', '/c', "start cmd /k \"${parametros} 2>&1 | ${filtro}\""
@@ -218,28 +228,22 @@ tasks.register('runAndroid', Exec) {
             'sh', '-c', "${parametros} 2>&1 | grep -vE '${saidaFiltro.join('|')}' &"
         ].execute() }
         
-        commandLine 'adb', 'wait-for-device' // aguarda o simulador ficar pronto
+        ByteArrayOutputStream saidaStd
+        Process processoEspera = ['adb', 'wait-for-device'].execute()
+        processoEspera.waitForProcessOutput(saidaStd, System.err)
 
         boolean eBootCompleto = false
         int tentativas = 0
-        ByteArrayOutputStream saidaStd
-        ByteArrayOutputStream erroStd
         while (!eBootCompleto && tentativas < 150) { // tenta por 150 segundos
             try {
                 saidaStd = new ByteArrayOutputStream()
-                erroStd = new ByteArrayOutputStream()
                 [
                     'adb', 'shell', 'getprop', 'sys.boot_completed'
-                ].execute().waitForProcessOutput(saidaStd, erroStd) // saída, erro e espera acabar
+                ].execute().waitForProcessOutput(saidaStd, System.err) // pega saída e espera acabar
 
-                if (saidaStd.toString().trim() == '1') {
-                    eBootCompleto = true
-                } else { 
-                    sleep(1000) // espera 1 segundo 
-                }
-            } catch (Exception e) { 
-                sleep(1000) 
-            }
+                if (saidaStd.toString().trim() == '1') { eBootCompleto = true } 
+                else { sleep(1000) } // espera 1 segundo
+            } catch (Exception e) { sleep(1000) }
             tentativas++
         }
     }

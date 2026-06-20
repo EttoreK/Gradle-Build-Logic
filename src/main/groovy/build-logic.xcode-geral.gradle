@@ -1,132 +1,35 @@
 // Declaração dos plugins
 // plugins {}
 // Atalhos para libs.versions.toml para facilitar a leitura
-Object ver = libs.versions
-Object propsLocal = gradle.ext.propsLocal
+XcConfig xcConfig = project.extensions.create('xcConfig', XcConfig)
 // Definição de provedores para acesso à valores de configuração e diretórios
-Provider<Directory> projDirProv = project.providers.provider { project.layout.projectDirectory }
-Provider<Boolean> eMacProv = providers.systemProperty('os.name').map {
-    it.toLowerCase().contains('mac')
+Provider<Map<String, String>> propsProv = providers.of(LeitorProps) { 
+    parameters.propertiesFile = rootProject.layout.projectDirectory.file(
+        providers.gradleProperty('localPropertiesNome')
+    )
 }
-Provider<String> appDirProv = project.providers.provider { 'src/main/swift' }
-Provider<Directory> srcDirProv = projDirProv.zip(appDirProv) { Directory diretorio, String dirApp -> 
-    diretorio.dir(dirApp) 
-}
-Provider<String> winDiscProv = project.providers.provider { 
-    propsLocal.getProperty('unidade.win', 'C') 
-}
-Provider<String> buildXDirProv = providers.gradleProperty('buildDirXcode')
-Provider<String> macDonoProv = project.providers.provider { propsLocal.getProperty('mac.dono') }
-Provider<String> macSedeProv = project.providers.provider { propsLocal.getProperty('mac.sede') }
-Provider<String> macDirProv = project.providers.provider { propsLocal.getProperty('mac.dir') }
-Provider<String> versaoNumeroProv = providers.gradleProperty('appVerNum')
-Provider<String> appleIdProv = project.providers.provider { 
-    propsLocal.getProperty('apple.appleId') 
-}
-Provider<String> appleSenhaProv = project.providers.provider { 
-    propsLocal.getProperty('apple.senha') 
-}
-Provider<String> idTimeProv = project.providers.provider {
-    propsLocal.getProperty('apple.idTime', 'TAPABURACO')
-}
-Provider<String> certificadoProv = project.providers.provider {
-    propsLocal.getProperty('apple.certificado',)
-}
-Provider<String> nomePerfilProv = project.providers.provider {
-    propsLocal.getProperty('apple.nomePerfil')
-}
-Provider<String> categoriaProv = project.providers.provider {
-    propsLocal.getProperty('apple.category', 'app-store-connect')
-}
-Provider<String> metodoProv = project.providers.provider {
-    propsLocal.getProperty('apple.metodo', 'app-store-connect')
-}
-Provider<String> simuladorUsualProv = project.providers.provider {
-    propsLocal.getProperty('simulador.ios')
-}
-Provider<String> nomeAppProv = providers.gradleProperty('projNome')
-Provider<String> xcodeProjProv = nomeAppProv.map { "${it}.xcodeproj" }
-Provider<String> testeUnitNomeProv = providers.gradleProperty('swiftTestDirUnit')
-Provider<String> testeUiNomeProv = providers.gradleProperty('swiftTestDirUI')
-Provider<String> xcIdPacoteAppProv = (project.providers.provider { appIdPacote }).zip(nomeAppProv){
-    String id, String app -> "${id}.${app.toLowerCase()}" 
-}
-Provider<String> vmDirProv = macDirProv.zip(nomeAppProv) { String dir, String app ->
+xcConfig.projDir.convention(project.layout.projectDirectory)
+xcConfig.srcDir.convention(xcConfig.projDir.map { it.dir(XcConfig.MAIN_DIR) })
+xcConfig.nomeApp.convention(providers.gradleProperty('projNome'))
+xcConfig.buildXDir.convention(providers.gradleProperty('buildDirXcode'))
+xcConfig.macDono.convention(propsProv.map { it.get('mac.dono') })
+xcConfig.macSede.convention(propsProv.map { it.get('mac.sede') })
+xcConfig.macDir.convention(propsProv.map { it.get('mac.dir') })
+xcConfig.vmDir.convention(xcConfig.macDir.zip(xcConfig.nomeApp) { String dir, String app ->
     new File(dir, app).path.replace(File.separator, '/')
-}
-Provider<String> vmAppDirProv = vmDirProv.map {
-    new File(it, 'app').path.replace(File.separator, '/') 
-}
-if (!macDirProv){ throw new GradleException('Nenhum diretório configurado para MacOs') }
-// Se necessário encapsula o comando em uma chamada ssh para a VM
-Closure<List<String>> comandoRemoto = { List<String> cmds ->
-    final Map<String, String> vmCmds = [
-        bash: '/bin/bash',
-        chmod: '/bin/chmod',
-        chown: '/usr/sbin/chown',
-        killall: '/usr/bin/killall',
-        mkdir: '/bin/mkdir',
-        open: '/usr/bin/open',
-        rm: '/bin/rm',
-        sudo: '/usr/bin/sudo',
-        swift: '/usr/bin/swift',
-        xcrun: '/usr/bin/xcrun',
-    ]
-    
-    if (eMacProv.get()) { return ['bash', '-c', cmds.join(' ')] } 
-    else {
-        if (!macDonoProv.isPresent() || !macSedeProv.isPresent()){
-            throw new GradleException('Credenciais não configuradas pra MacOs')
-        }
-        List<String> cmdRemotos = cmds.collect { String arg -> vmCmds.getOrDefault(arg, arg) }
-        // O comando final a ser executado via SSH
-        return [ 'ssh', "${macDonoProv.get()}@${macSedeProv.get()}", 
-            "\"cd \'${vmAppDirProv.get()}\' && ${cmdRemotos.join(' ')}\""
-        ]
-    }
-}
-// API / Exportação das variáveis
-project.ext.xcodeVars = [
-    auxs: [
-        ver: ver,
-        comandoRemoto: comandoRemoto
-    ],
-    
-    provs: [
-        projDirProv: projDirProv,
-        appDirProv: appDirProv,
-        srcDirProv: srcDirProv,
-        nomeAppProv: nomeAppProv,
-        xcodeProjProv: xcodeProjProv,
-        testeUnitNomeProv: testeUnitNomeProv,
-        testeUiNomeProv: testeUiNomeProv,
-        xcIdPacoteAppProv: xcIdPacoteAppProv,
-        vmDirProv: vmDirProv,
-        vmAppDirProv: vmAppDirProv,
-        eMacProv: eMacProv,
-        winDiscProv: winDiscProv,
-        idTimeProv: idTimeProv,
-        appleIdProv: appleIdProv,
-        appleSenhaProv: appleSenhaProv,
-        certificadoProv: certificadoProv,
-        nomePerfilProv: nomePerfilProv,
-        categoriaProv: categoriaProv,
-        metodoProv: metodoProv,
-        simuladorUsualProv: simuladorUsualProv,
-        versaoNumeroProv: versaoNumeroProv,
-        buildXDirProv: buildXDirProv
-    ],
-
-    cons: [
-        proxyType: '1', // tipo de relação 1 - Native Target / 2 - Arquivo
-        includeInIndex: '0', // 1sim/0não é escaneado pelo motor de indexação
-        buildActionMask: '2147483647', // número total de bits
-        runOnlyForDeploymentPostprocessing : '0', // 1sim/0não roda apenas quando em Archive
-        defaultConfigurationIsVisible : '0', // flag de UI legada
-
-        testeDir: 'src/test/swift',
-        resDir: 'src/main/resources'
-    ]
-]
+})
+xcConfig.vmAppDir.convention(xcConfig.vmDir.map {
+    new File(it, 'app').path.replace(File.separator, '/')
+})
+xcConfig.eMac.convention(providers.systemProperty('os.name').map { 
+    it.toLowerCase().contains('mac') 
+})
+xcConfig.xcIdPacoteApp.convention(providers.gradleProperty('appIdPacote').zip(xcConfig.nomeApp){
+    String id, String app -> "${id}.${app.toLowerCase()}" 
+})
+xcConfig.idTime.convention(propsProv.map { it.getOrDefault('apple.idTime', 'TAPABURACO') })
+xcConfig.xcodeProj.convention(xcConfig.nomeApp.map { "${it}.xcodeproj" })
+xcConfig.testeUnitNome.convention(providers.gradleProperty('swiftTestDirUnit'))
+xcConfig.testeUiNome.convention(providers.gradleProperty('swiftTestDirUI'))
 // Biblioteras para serem usadas no código
 // dependencies {}

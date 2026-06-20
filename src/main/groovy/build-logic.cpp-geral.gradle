@@ -1,10 +1,15 @@
 // Declaração dos plugins
 // plugins {}
+Provider<Map<String, String>> propsProv = providers.of(LeitorProps) { 
+    parameters.propertiesFile = rootProject.layout.projectDirectory.file(
+        providers.gradleProperty('localPropertiesNome')
+    )
+}
 // Configuração das ferramentas de compilação. Garante o uso do compilador correto
 toolChains {
     // Diz para o Gradle procurar especificamente pelo Gcc
     if (System.getProperty('os.name').toLowerCase().contains('windows')) {
-        String msysDir = "${gradle.ext.propsLocal.getProperty('unidade.win', 'C')}:/msys64"
+        String msysDir = "${propsProv.get().getOrDefault('unidade.win', 'C')}:/msys64"
 
         visualCpp(VisualCpp)
 

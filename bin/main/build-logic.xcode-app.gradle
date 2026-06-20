@@ -3,24 +3,32 @@
 plugins.apply(libs.plugins.xcodeProj.get().getPluginId()) // cria Xcode projs básicos e limitados
 plugins.apply(libs.plugins.buildLogicXcodeGeral.get().getPluginId()) // configurações gerais
 plugins.apply(libs.plugins.buildLogicXcodeActions.get().getPluginId()) // ações de build
-// Atalhos para libs.versions.toml para facilitar a leitura
-Object x = project.ext.xcodeVars
+// Atalhos para facilitar a leitura
+Object ver = libs.versions
+XcConfig xcConfig = project.extensions.getByType(XcConfig)
+Provider<Map<String, String>> propsProv = providers.of(LeitorProps) { 
+    parameters.propertiesFile = rootProject.layout.projectDirectory.file(
+        providers.gradleProperty('localPropertiesNome')
+    )
+}
 // Definição de provedores para acesso à valores de configuração e diretórios
 Provider<String> espNomeProv = providers.gradleProperty('espolioDir').orElse('espolio')
 Provider<Directory> xcassetsDirProv = project.providers.provider { 
     project.rootProject.layout.projectDirectory.dir(
-        "${x.provs.buildXDirProv.get()}/generated/Assets.xcassets"
+        "${xcConfig.buildXDir.get()}/generated/Assets.xcassets"
 )}
 Provider<Directory> espolioDirProv = project.rootProject.layout.projectDirectory.dir(espNomeProv)
-Provider<Directory> xcProjDirProv = x.provs.projDirProv.zip(x.provs.xcodeProjProv) { 
+Provider<Directory> xcProjDirProv = xcConfig.projDir.zip(xcConfig.xcodeProj) { 
     Directory pDir, String caminho -> pDir.dir(caminho) // /app/app.xcodeproj
 }
+Provider<String> metodoProv = propsProv.map { it.getOrDefault('apple.metodo', 'app-store-connect') }
+Provider<String> appVerNumProv = providers.gradleProperty('appVerNum')
 // Busca a versão swift instalada na VM
 Closure<String> pegaVersaoSwift = {
     try {
         ByteArrayOutputStream saidaStd = new ByteArrayOutputStream()
         ByteArrayOutputStream erroStd = new ByteArrayOutputStream()
-        Process processo = x.auxs.comandoRemoto(['swift', '--version']).execute()
+        Process processo = xcConfig.comandoRemoto(['swift', '--version']).execute()
         processo.waitForProcessOutput(saidaStd, erroStd)
         String saida = saidaStd.toString('UTF-8').trim()
         String erro = erroStd.toString('UTF-8').trim()
@@ -31,7 +39,7 @@ Closure<String> pegaVersaoSwift = {
         }
         if (versao.find()) { return versao.group(1) }
     } catch (Exception e) { println ">> AVISO: versão Swift ausente. Usando padrão. ${e.message}" }
-    return x.auxs.ver.swift.get() 
+    return ver.swift.get() 
 }
 // Gera um UUID aleatório de 24 caracteres, diferente em cada geração, para builds limpas
 Closure<String> criaUuid = {
@@ -67,7 +75,7 @@ Closure<String> criaPBXContnrItemProxy = { Map uuidsMap, String prcId, String al
     ${prcId} /* PBXContainerItemProxy */ = {
         isa = PBXContainerItemProxy;
         containerPortal = ${pegaUuid(uuidsMap, 'base', 'projeto')} /* Project object */;
-        proxyType = ${x.cons.proxyType};
+        proxyType = ${XcConfig.PROXY_TYPE};
         remoteGlobalIDString = ${alvoId};
         remoteInfo = \"${alvo}\";
     };"""
@@ -78,7 +86,7 @@ Closure<String> criaPBXFileReference = { String fileRefId, String alvo, String n
     ${fileRefId} /* ${alvo}.${tipo} */ = {
         isa = PBXFileReference;
         explicitFileType = \"wrapper.${tipo == 'app' ? 'application' : 'cfbundle'}\";
-        includeInIndex = ${x.cons.includeInIndex};
+        includeInIndex = ${XcConfig.INCLUDE_IN_INDEX};
         path = \"${nome}.${tipo}\";
         sourceTree = BUILT_PRODUCTS_DIR;
     };"""
@@ -88,11 +96,11 @@ Closure<String> criaPBXFrameworksBuildPhase = { String frameworksBuildPhaseId, L
     return """
     ${frameworksBuildPhaseId} = {
         isa = PBXFrameworksBuildPhase;
-        buildActionMask = ${x.cons.buildActionMask};
+        buildActionMask = ${XcConfig.BUILD_ACTION_MASK};
         files = (
             ${arqs ? arqs.join(',\n').indent(12).strip() : ''}
         );
-        runOnlyForDeploymentPostprocessing = ${x.cons.runOnlyForDeploymentPostprocessing};
+        runOnlyForDeploymentPostprocessing = ${XcConfig.RUN_ONLY_FOR_DEPLOYMENT_POSTPROCESSING};
     };"""
 }
 // Construtor de elementos Group para o .pbxproj
@@ -138,27 +146,27 @@ Closure<String> criaPBXTargetDependency = { String depId, String alvoId, String 
 Closure<String> criaPBXSourcesBuildPhase = { String faseId, List<String> ids -> return """
     ${faseId} = {
         isa = PBXSourcesBuildPhase;
-        buildActionMask = ${x.cons.buildActionMask};
+        buildActionMask = ${XcConfig.BUILD_ACTION_MASK};
         files = (
             ${ids.join(',\n').indent(12).strip()}
         );
-        runOnlyForDeploymentPostprocessing = ${x.cons.runOnlyForDeploymentPostprocessing};
+        runOnlyForDeploymentPostprocessing = ${XcConfig.RUN_ONLY_FOR_DEPLOYMENT_POSTPROCESSING};
     };"""
 }
 // Construtor de elementos ResourcesBuildPhase para o .pbxproj
 Closure<String> criaPBXResourcesBuildPhase = { String faseArqsId, List<String> refsIds -> return """
     ${faseArqsId} = {
         isa = PBXResourcesBuildPhase;
-        buildActionMask = ${x.cons.buildActionMask};
+        buildActionMask = ${XcConfig.BUILD_ACTION_MASK};
         files = (${refsIds ? '\n' + refsIds.join(',\n').indent(12) + '\n);'.indent(8) : ');'}
-        runOnlyForDeploymentPostprocessing = ${x.cons.runOnlyForDeploymentPostprocessing};
+        runOnlyForDeploymentPostprocessing = ${XcConfig.RUN_ONLY_FOR_DEPLOYMENT_POSTPROCESSING};
     };"""
 }
 // Construtores de elementos de Build Settings
 Closure<String> configuraBuild = { String nome, String alvo, String tipo, String config,
     String idPacote, String nomeApp, String verSwift, String plataforma ->
     String testeTipo = alvo ? (tipo.contains('ui') ? 'UI' : '') : null
-    String buildXDir = x.provs.buildXDirProv.get()
+    String buildXDir = xcConfig.buildXDir.get()
     String comum = """
         ENABLE_APP_INTENTS_METADATA_EXTRACTION = NO;
         GENERATE_INFOPLIST_FILE = YES;
@@ -166,8 +174,8 @@ Closure<String> configuraBuild = { String nome, String alvo, String tipo, String
         ${config == 'Debug' ? 'ENABLE_TESTABILITY = YES;' : ''}"""
     String comumApp = comum + """
         PRODUCT_BUNDLE_IDENTIFIER = \"${idPacote}.${plataforma}\";
-        INFOPLIST_KEY_CFBundleShortVersionString = \"${x.provs.versaoNumeroProv.get()}\";
-        INFOPLIST_KEY_CFBundleVersion = \"${x.provs.versaoNumeroProv.get()}\";
+        INFOPLIST_KEY_CFBundleShortVersionString = \"${appVerNumProv.get()}\";
+        INFOPLIST_KEY_CFBundleVersion = \"${appVerNumProv.get()}\";
         INFOPLIST_KEY_UIApplicationSceneManifest_EnableMultipleWindows = NO;
         PRODUCT_NAME = \"${nomeApp}\";
         PRODUCT_MODULE_NAME = \"${nomeApp}\";
@@ -179,11 +187,11 @@ Closure<String> configuraBuild = { String nome, String alvo, String tipo, String
         ${testeTipo == 'UI' ? 'USES_XCTRUNNER = YES;' : 'BUNDLE_LOADER = \"\$(TEST_HOST)\";'}
         ${plataforma == 'ios' ? 'TARGETED_DEVICE_FAMILY = \"1,2\";' : ''}"""
     String comumIos = """
-        IPHONEOS_DEPLOYMENT_TARGET = \"${x.auxs.ver.minIosVer.get()}\";
+        IPHONEOS_DEPLOYMENT_TARGET = \"${ver.minIosVer.get()}\";
         SDKROOT = \"${(tipo == 'appios' && config == 'Release') ? 'iphoneos' : 'iphonesimulator'}\";
         SUPPORTED_PLATFORMS = \"iphonesimulator iphoneos\";"""
     String comumMacos = """
-        MACOSX_DEPLOYMENT_TARGET = \"${x.auxs.ver.minMacosVer.get()}\";
+        MACOSX_DEPLOYMENT_TARGET = \"${ver.minMacosVer.get()}\";
         SDKROOT = \"macosx\"; 
         SUPPORTED_PLATFORMS = \"macosx\";"""
     
@@ -233,7 +241,7 @@ Closure<String> criaXCConfigurationList = { String listaConfigId, List<String> c
         buildConfigurations = (
             ${configsBuilds.join(',\n').indent(12).strip()}
         );
-        defaultConfigurationIsVisible = ${x.cons.defaultConfigurationIsVisible};
+        defaultConfigurationIsVisible = ${XcConfig.DEFAULT_CONFIGURATION_IS_VISIBLE};
         defaultConfigurationName = \"${config}\";
     };"""
 }
@@ -338,8 +346,8 @@ Closure<String> criaScheme = { Map alvoMap, List testaveis, Map alvoSedeMap = nu
     return """\
         <?xml version=\"1.0\" encoding=\"UTF-8\"?>
         <Scheme
-            LastUpgradeVersion=\"${x.auxs.ver.schemeUpgradeVersion.get()}\"
-            version=\"${x.auxs.ver.schemeVersion.get()}\">
+            LastUpgradeVersion=\"${ver.schemeUpgradeVersion.get()}\"
+            version=\"${ver.schemeVersion.get()}\">
             <BuildAction
                 parallelizeBuildables=\"YES\"
                 buildImplicitDependencies=\"YES\"${buildArqAttr}>
@@ -402,7 +410,7 @@ Closure<Void> descobreArqs = { Map ePBXMap, File testeDir, File baseDir, File re
             dir.eachFileRecurse(groovy.io.FileType.FILES) { File arq ->
                 if (arq.name.contains('.DS_Store')) { return }
                 pegaLista(ePBXMap, arqNome).add(
-                    x.provs.projDirProv.get().getAsFile().toURI().relativize(arq.toURI()).getPath()
+                    xcConfig.projDir.get().asFile.toURI().relativize(arq.toURI()).getPath()
                 )
             }
         } else { println ">> AVISO: local de teste \'${dirNome}\' não pertence a nenhum alvo." }
@@ -412,7 +420,7 @@ Closure<Void> descobreArqs = { Map ePBXMap, File testeDir, File baseDir, File re
         baseDir.eachFileRecurse(groovy.io.FileType.FILES) { File arq ->
             if (arq.name.endsWith('.swift')) {
                 pegaLista(ePBXMap, 'fonteArqs').add(
-                    x.provs.projDirProv.get().getAsFile().toURI().relativize(arq.toURI()).getPath())
+                    xcConfig.projDir.get().asFile.toURI().relativize(arq.toURI()).getPath())
             }
         }
     }
@@ -441,11 +449,11 @@ Closure<Void> descobreArqs = { Map ePBXMap, File testeDir, File baseDir, File re
         }
     }
 
-    pegaRes(resDir, resDir, 'recursosLocal', "${x.cons.resDir}/")
+    pegaRes(resDir, resDir, 'recursosLocal', "${XcConfig.RES_DIR}/")
     pegaRes(espDir, espDir, 'recursosExt', "../${espNomeProv.get()}/")
     // Adiciona a pasta dos ícones
-    File xcassetsPaiDir = xcassetsDirProv.get().getAsFile().parentFile
-    String buildXDir = x.provs.buildXDirProv.get()
+    File xcassetsPaiDir = xcassetsDirProv.get().asFile.parentFile
+    String buildXDir = xcConfig.buildXDir.get()
     pegaRes(xcassetsPaiDir, xcassetsPaiDir, 'recursosLocal', "../${buildXDir}/generated/")
 }
 // Processa arquivos fonte e de recursos, criando referências PBX
@@ -590,7 +598,7 @@ Closure<Void> criaProjetoBasePBX = { Map uuidsMap, Map ePBXMap, Map atrbAlvosMap
     pegaLista(ePBXMap, 'PBXGroup') << criaPBXGroup( pegaUuid(uuidsMap, 'base', 'gpProduto'), 
         'Products', pegaLista(ePBXMap, 'productsGpChildren'))
     pegaLista(ePBXMap, 'PBXGroup') << criaPBXGroup(
-        pegaUuid(uuidsMap, 'base', 'gpFontes'), x.provs.appDir.get(), gpFontes)
+        pegaUuid(uuidsMap, 'base', 'gpFontes'), XcConfig.MAIN_DIR, gpFontes)
     List<String> testeFilhos = []
     ePBXMap.findAll { String idx, List<String> elementos -> idx.endsWith('Files') }.each { 
         String inx, List<String> listaArqs ->
@@ -630,9 +638,9 @@ Closure<Void> escreveArquivosFinais = { Map uuidsMap, Map ePBXMap, Map provsMap,
     pbxArq.text = """\
         // !\$*UTF8*\$!
         {
-            archiveVersion = ${x.auxs.ver.archiveVersion.get()};
+            archiveVersion = ${ver.archiveVersion.get()};
             classes = {};
-            objectVersion = ${x.auxs.ver.objectVersion.get()};
+            objectVersion = ${ver.objectVersion.get()};
             objects = {
                 ${criaBlocoPBX(ePBXMap,['PBXBuildFile'],'')}
                 ${criaBlocoPBX(ePBXMap,['PBXContainerItemProxy'],'\n')}
@@ -649,7 +657,7 @@ Closure<Void> escreveArquivosFinais = { Map uuidsMap, Map ePBXMap, Map provsMap,
             };
             rootObject = ${pegaUuid(uuidsMap, 'base', 'projeto')};
         }""".stripIndent().replaceAll('[\\n\\n]{1,3}', '\n').replaceAll(',,', ',').replaceAll(
-            "../${espNomeProv.get()}", x.cons.resDir).replaceAll(/,\n\s*\);/, '\n\t\t\t);')
+            "../${espNomeProv.get()}", XcConfig.RES_DIR).replaceAll(/,\n\s*\);/, '\n\t\t\t);')
     
     plataformas.each { String plataforma ->
         String nomeBase = appAlvosMap.nome.get()
@@ -680,17 +688,17 @@ Closure<Void> escreveArquivosFinais = { Map uuidsMap, Map ePBXMap, Map provsMap,
             <plist version=\"1.0\">
                 <dict>
                     <key>method</key>
-                    <string>${x.provs.metodoProv.get()}</string>
+                    <string>${metodoProv.get()}</string>
                     <key>signingStyle</key>
                     <string>automatic</string>
                     <key>stripSwiftSymbols</key>
                     <true/>
                     <key>teamID</key>
-                    <string>${x.provs.idTimeProv.get()}</string>
+                    <string>${xcConfig.idTime.get()}</string>
                     <key>provisioningProfiles</key>
                     <dict>
-                        <key>${x.provs.xcIdPacoteAppProv.get()}</key>
-                        <string>AppStore_${x.provs.xcIdPacoteAppProv.get()}</string>
+                        <key>${xcConfig.xcIdPacoteApp.get()}</key>
+                        <string>AppStore_${xcConfig.xcIdPacoteApp.get()}</string>
                     </dict>
                     <key>iCloudContainerEnvironment</key>
                     <string>Production</string>
@@ -704,19 +712,19 @@ tasks.register('xproj') {
     group = 'Xcode Actions'
 
     Provider<Directory> xcSchemesDirProv = xcProjDirProv.map { it.dir('xcshareddata/xcschemes') }
-    Provider<Directory> resourcesDirProv = x.provs.projDirProv.map { it.dir(x.cons.resDir) }
-    Provider<Directory> srcTestSwiftDirProv = x.provs.projDirProv.map { it.dir(x.cons.testeDir) }
+    Provider<Directory> resourcesDirProv = xcConfig.projDir.map { it.dir(XcConfig.RES_DIR) }
+    Provider<Directory> srcTestSwiftDirProv = xcConfig.projDir.map { it.dir(XcConfig.TESTE_DIR) }
     Provider<RegularFile> xcPBXProjArqProv = xcProjDirProv.map { it.file('project.pbxproj') }
 
     inputs.files(tasks.named('xIcone'))
-    inputs.dir x.provs.srcDirProv
+    inputs.dir xcConfig.srcDir
     inputs.dir srcTestSwiftDirProv
     inputs.dir(resourcesDirProv).optional()
     inputs.dir(espolioDirProv).optional()
     outputs.dir xcProjDirProv
 
     doFirst {
-        File xcProjDir = xcProjDirProv.get().getAsFile()
+        File xcProjDir = xcProjDirProv.get().asFile
         if (xcProjDir.exists()) { xcProjDir.deleteDir() }
         xcProjDir.mkdirs()
         xcSchemesDirProv.get().asFile.mkdirs()
@@ -724,21 +732,21 @@ tasks.register('xproj') {
 
     doLast {
         // Variáveis e resolução de provedores
-        String nomeApp = x.provs.nomeAppProv.get()
-        String idPacote = x.provs.xcIdPacoteAppProv.get()
+        String nomeApp = xcConfig.nomeApp.get()
+        String idPacote = xcConfig.xcIdPacoteApp.get()
         String verSwift = pegaVersaoSwift()
-        String xcodeProjDir = x.provs.xcodeProjProv.get()
+        String xcodeProjDir = xcConfig.xcodeProj.get()
         List<String> plataformas = ['iOS', 'macOS']
         Map<String, Object> appAlvosMap = [ 
-            nome: x.provs.nomeAppProv, tipo: 'application', id: 'app' 
+            nome: xcConfig.nomeApp, tipo: 'application', id: 'app' 
         ]
         List<Map<String, Object>> testAlvos = [ // Lista de alvos de teste
             [ 
-                nome: x.provs.testeUnitNomeProv, tipo: 'bundle.unit-test', sede: x.provs.nomeAppProv, 
-                id: 'unit', arqs: x.provs.testeUnitNomeProv.map { "${it}Files" } 
+                nome: xcConfig.testeUnitNome, tipo: 'bundle.unit-test', sede: xcConfig.nomeApp, 
+                id: 'unit', arqs: xcConfig.testeUnitNome.map { "${it}Files" } 
             ], [ 
-                nome: x.provs.testeUiNomeProv, tipo: 'bundle.ui-testing', sede: x.provs.nomeAppProv, 
-                id: 'ui', arqs: x.provs.testeUiNomeProv.map { "${it}Files" } 
+                nome: xcConfig.testeUiNome, tipo: 'bundle.ui-testing', sede: xcConfig.nomeApp, 
+                id: 'ui', arqs: xcConfig.testeUiNome.map { "${it}Files" } 
             ]
         ]
         List<Map<String, Object>> alvos = [ appAlvosMap ] + testAlvos 
@@ -763,15 +771,15 @@ tasks.register('xproj') {
             [(nomeBase): entradasPlataformaMap]
         }
         descobreArqs(
-            ePBXMap, srcTestSwiftDirProv.get().getAsFile(), x.provs.srcDirProv.get().getAsFile(), 
-            resourcesDirProv.get().getAsFile(), espolioDirProv.get().getAsFile(), arqsTesteMap)
+            ePBXMap, srcTestSwiftDirProv.get().asFile, xcConfig.srcDir.get().asFile, 
+            resourcesDirProv.get().asFile, espolioDirProv.get().asFile, arqsTesteMap)
         Map refsMap = processaReferencias(uuidsMap, ePBXMap, testAlvos, arqsTesteMap)
         Map<String, String> atrbAlvosMap = criaAlvo(uuidsMap, ePBXMap, alvos, plataformas, 
             refsMap.recs, refsMap.testes, refsMap.fontes, provs, nomeApp, idPacote, verSwift)
         criaProjetoBasePBX(uuidsMap, ePBXMap, atrbAlvosMap, refsMap.groupFontes, nomeApp, idPacote, 
             verSwift, xcodeProjDir)
-        escreveArquivosFinais(uuidsMap, ePBXMap, provs, xcPBXProjArqProv.get().getAsFile(), 
-            xcSchemesDirProv.get().getAsFile(), plataformas, appAlvosMap, testAlvos, xcodeProjDir)
+        escreveArquivosFinais(uuidsMap, ePBXMap, provs, xcPBXProjArqProv.get().asFile, 
+            xcSchemesDirProv.get().asFile, plataformas, appAlvosMap, testAlvos, xcodeProjDir)
     }
 }
 // Cria o ícone do aplicativo
@@ -781,14 +789,15 @@ tasks.register('xIcone') {
 
     Provider<RegularFile> fundoSvgProv = espolioDirProv.map { it.file('icones/appBackground.svg') }
     Provider<RegularFile> frenteSvgProv = espolioDirProv.map { it.file('icones/appForeground.svg') }
+    Provider<String> winDiscProv = propsProv.map { it.getOrDefault('unidade.win', 'C') }
     
     inputs.files(fundoSvgProv, frenteSvgProv)
     outputs.dir xcassetsDirProv
     
     doLast { 
-        File fundoSVG = fundoSvgProv.get().getAsFile()
-        File frenteSVG = frenteSvgProv.get().getAsFile()
-        File xcassetsDir = xcassetsDirProv.get().getAsFile()
+        File fundoSVG = fundoSvgProv.get().asFile
+        File frenteSVG = frenteSvgProv.get().asFile
+        File xcassetsDir = xcassetsDirProv.get().asFile
 
         if (!fundoSVG.exists()) throw new GradleException('Faltou o SVG de Fundo!')
         if (!frenteSVG.exists()) throw new GradleException('Faltou o SVG de Frente!')
@@ -797,8 +806,7 @@ tasks.register('xIcone') {
         if (!iconeDir.exists()) iconeDir.mkdirs()
 
         List<String> mesclaSVG = [
-            x.provs.eMacProv.get() ? 'magick' : 
-            "${x.provs.winDiscProv.get()}:/msys64/ucrt64/bin/magick.exe", 
+            xcConfig.eMac.get() ? 'magick' : "${winDiscProv.get()}:/msys64/ucrt64/bin/magick.exe", 
             '-background', 'none', 
             fundoSVG.absolutePath, 
             frenteSVG.absolutePath, 
