@@ -1,9 +1,8 @@
 // Declaração dos plugins
 // plugins {}
 Provider<Map<String, String>> propsProv = providers.of(LeitorProps) { 
-    parameters.propertiesFile = rootProject.layout.projectDirectory.file(
-        providers.gradleProperty('localPropertiesNome')
-    )
+    String nomeArq = providers.gradleProperty('localPropertiesNome').getOrElse('local.properties')
+    parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
 }
 // Configuração das ferramentas de compilação. Garante o uso do compilador correto
 toolChains {

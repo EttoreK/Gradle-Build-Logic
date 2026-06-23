@@ -1,8 +1,8 @@
 // Declaração dos plugins
 // plugins {}
 // Define o diretório de build usando o nome dinâmico da pasta
-project.layout.buildDirectory.set(project.rootProject.layout.projectDirectory.dir(
-    providers.gradleProperty('buildDirWeb')
+project.layout.buildDirectory.set(project.layout.dir(
+    providers.gradleProperty('buildDirWeb').map { new File(project.rootDir, it) }
 ))
 // Configurações do Spring e exclusão de bibliotecas padrão
 project.configurations {
@@ -28,8 +28,8 @@ project.sourceSets {
         resources {
             srcDirs += ['src/main/resources'] // mantém os recursos padrões
             // inclui o conteúdo da pasta espolio no Classpath
-            srcDirs += [project.rootProject.layout.projectDirectory.dir(
-                providers.gradleProperty('espolioDir').orElse('espolio')
+            srcDirs += [project.layout.dir(providers.gradleProperty(
+                'espolioDir').orElse('espolio').map { new File(project.rootDir, it) }
             )]
         }
     }

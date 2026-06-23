@@ -3,18 +3,17 @@
 plugins.apply(libs.plugins.buildLogicXcodeGeral.get().getPluginId())
 // application {} // Define configurações do swift-application (incompativel com gradle 9 [11/2025])
 // Atalhos para facilitar a leitura
-XcConfig xcConfig = project.extensions.getByType(XcConfig)
+Object xcConfig = project.extensions.getByType(XcConfig)
 Provider<Map<String, String>> propsProv = providers.of(LeitorProps) { 
-    parameters.propertiesFile = rootProject.layout.projectDirectory.file(
-        providers.gradleProperty('localPropertiesNome')
-    )
+    String nomeArq = providers.gradleProperty('localPropertiesNome').getOrElse('local.properties')
+    parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
 }
 // Definição de provedores para acesso à valores de configuração e diretórios
 Provider<String> vmXcodeDirProv = xcConfig.vmDir.zip(xcConfig.buildXDir) { 
     String dir, String bDir -> new File(dir.toString(), bDir).path.replace(File.separator, '/')
 }
-Provider<Directory> xcDirProv = providers.provider { 
-    project.rootProject.layout.projectDirectory.dir(xcConfig.buildXDir) 
+Provider<Directory> xcDirProv = xcConfig.rootDir.zip(xcConfig.buildXDir) { 
+    Directory raiz, String buildX -> raiz.dir(buildX) 
 }
 Provider<String> appleIdProv = propsProv.map { it.get('apple.appleId') }
 Provider<String> appleSenhaProv = propsProv.map { it.get('apple.senha') }
@@ -90,12 +89,14 @@ tasks.register('syncToMac') { // caso necessário use "--rerun" para forçar a r
     }})
     outputs.upToDateWhen { true } // só sincroniza 1 vez, neessário para não apagar as builds
 
-    Provider<Directory> espolioDirProv = project.rootProject.layout.projectDirectory.dir(
+    Provider<Directory> espolioDirProv = xcConfig.rootDir.zip(
         providers.gradleProperty('espolioDir').orElse('espolio')
-    )
-    Provider<Directory> geradoDirProv = project.rootProject.layout.projectDirectory.dir(
-        xcConfig.buildXDir.map { "${it}/generated" }
-    )
+    ) { Directory raiz, String esp -> 
+        raiz.dir(esp) 
+    }
+    Provider<Directory> geradoDirProv = xcConfig.rootDir.zip(xcConfig.buildXDir) { 
+        Directory raiz, String buildX -> raiz.dir("${buildX}/generated") 
+    }
     // Executa o comando de limpeza e criação diretamente via SSH
     doFirst {
         List<String> preparoComandos = [
@@ -356,15 +357,17 @@ Closure<Void> xarchive = { Task tarefa, String platforma, String sdk ->
     tarefa.inputs.dir xcConfig.srcDir.get()
     tarefa.inputs.dir xcConfig.xcodeProj.get()
     tarefa.inputs.files(tasks.named('syncToMac'))
-    tarefa.outputs.file(xcConfig.eMac.flatMap { Boolean eMac ->
-        if (eMac) { return providers.provider {
-            project.rootProject.layout.projectDirectory.file(pegaArchiveDir(platforma)) }
-        } else { return providers.provider { null } }
-    }).optional()
 
+    Provider<RegularFile> archiveArqProv = project.layout.file(project.provider { 
+        new File(raizDir, pegaArchiveDir(platforma)) 
+    })
     Provider<String> categoriaProv = propsProv.map { 
         it.getOrDefault('apple.category', 'app-store-connect') 
     }
+
+    tarefa.outputs.file(xcConfig.eMac.flatMap { Boolean ehMac ->
+        ehMac ? archiveArqProv : providers.provider { null }
+    }).optional()
     // O Archive usa uma configuração específica de Release
     tarefa.executable = pegaExecutavelBase()
     tarefa.argumentProviders.add(new CommandLineArgumentProvider() {

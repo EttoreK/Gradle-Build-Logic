@@ -2,9 +2,8 @@
 // plugins {}
 // Atalhos para facilitar a leitura
 Provider<Map<String, String>> propsProv = providers.of(LeitorProps) { 
-    parameters.propertiesFile = rootProject.layout.projectDirectory.file(
-        providers.gradleProperty('localPropertiesNome')
-    )
+    String nomeArq = providers.gradleProperty('localPropertiesNome').getOrElse('local.properties')
+    parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
 }
 // Provedores para acesso lazy às variáveis
 Provider<Boolean> eWindowsProv = providers.systemProperty('os.name').map {
@@ -214,12 +213,12 @@ tasks.register('webIco') {
     group = 'Web Actions'
     description = 'Gera o icone.png para a aplicação Web'
 
-    Provider<RegularFile> fundoSvgProv = espNomeProv.map {
-        project.rootProject.layout.projectDirectory.file("${it}/icones/appBackground.svg")
-    }
-    Provider<RegularFile> frenteSvgProv = espNomeProv.map {
-        project.rootProject.layout.projectDirectory.file("${it}/icones/appForeground.svg")
-    }
+    Provider<RegularFile> fundoSvgProv = project.layout.file(espNomeProv.map {
+        new File(project.rootDir, "${it}/icones/appBackground.svg")
+    })
+    Provider<RegularFile> frenteSvgProv = project.layout.file(espNomeProv.map {
+        new File(project.rootDir, "${it}/icones/appForeground.svg")
+    })
     Provider<RegularFile> pngArqProv = buildDirProv.file('generated/webIcoRes/static/favicon.png')
     
     inputs.files(fundoSvgProv, frenteSvgProv)

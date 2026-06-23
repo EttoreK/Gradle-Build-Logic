@@ -2,9 +2,8 @@
 // plugins {}
 // Atalhos para facilitar a leitura
 Provider<Map<String, String>> propsProv = providers.of(LeitorProps) { 
-    parameters.propertiesFile = rootProject.layout.projectDirectory.file(
-        providers.gradleProperty('localPropertiesNome')
-    )
+    String nomeArq = providers.gradleProperty('localPropertiesNome').getOrElse('local.properties')
+    parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
 }
 // Definição de provedores para acesso à valores de configuração e diretórios
 Provider<Directory> buildDirProv = project.layout.buildDirectory
@@ -25,7 +24,9 @@ Provider<String> winDonoProv = propsProv.map { it.get('win.dono') }
 Provider<String> winSedeProv = propsProv.map { it.get('win.sede') }
 Provider<String> winDirProv = propsProv.map { it.get('win.dir') }
 Provider<String> winDiscProv = propsProv.map { it.getOrDefault('unidade.win', 'C') }
-Provider<Directory> espolioDirProv = project.rootProject.layout.projectDirectory.dir(espNomeProv)
+Provider<Directory> espolioDirProv = project.layout.dir(
+    espNomeProv.map { new File(project.rootDir, it) }
+)
 Provider<Directory> projDirProv = project.providers.provider { project.layout.projectDirectory }
 // Se necessário encapsula o comando em uma chamada ssh para a VM
 Closure<List<String>> comandoRemoto = { String os, List<String> entradaCmds, String extDir = null ->

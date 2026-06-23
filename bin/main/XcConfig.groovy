@@ -15,6 +15,7 @@ abstract class XcConfig {
     static final String RES_DIR = 'src/main/resources'
 
     abstract DirectoryProperty getProjDir()
+    abstract DirectoryProperty getRootDir()
     abstract DirectoryProperty getSrcDir()
     abstract Property<Boolean> geteMac()
     abstract Property<String> getBuildXDir()

@@ -4,9 +4,9 @@ plugins.apply(libs.plugins.buildLogicCppGeral.get().getPluginId()) // configura�
 plugins.apply(libs.plugins.buildLogicCppActions.get().getPluginId()) // ações de build
 // Define o diretório de build
 Provider<String> projNomeProv = providers.gradleProperty('projNome')
-project.layout.buildDirectory.set(
-    project.rootProject.layout.projectDirectory.dir(providers.gradleProperty('buildDirCpp'))
-)
+project.layout.buildDirectory.set(project.layout.dir(
+    providers.gradleProperty('buildDirCpp').map { new File(project.rootDir, it) }
+))
 // Configurações da aplicação
 application {
     baseName.set(projNomeProv.get()) // nome do produto gerado

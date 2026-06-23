@@ -4,9 +4,9 @@ plugins.apply(libs.plugins.buildLogicAndroidGeral.get().getPluginId()) // config
 plugins.apply(libs.plugins.buildLogicAndroidActions.get().getPluginId()) // ações de build
 // Define o diretório de build
 Provider<String> projNomeProv = providers.gradleProperty('projNome')
-project.layout.buildDirectory.set(
-    project.rootProject.layout.projectDirectory.dir(providers.gradleProperty('buildDirAndroid'))
-)
+project.layout.buildDirectory.set(project.layout.dir(
+    providers.gradleProperty('buildDirAndroid').map { new File(project.rootDir, it) }
+))
 // Definição das características do aplicativo
 android {
     // Configurações padrão para o aplicativo Android
@@ -71,15 +71,15 @@ androidComponents {
 // Biblioteras para serem usadas no código
 dependencies {
     androidTestImplementation libs.adrxTestCore // conversa com o Android
+    androidTestImplementation libs.adrxTestEspresso // framework do Andoird para testes
     androidTestImplementation libs.adrxTestExtJunit // empacota tudo isso e manda o executor do Java
     androidTestImplementation libs.adrxTestRules // cria atalhos fáceis para abrir e fechar as telas
-    androidTestImplementation libs.xprssCore // framework do Andoird para testes
-    implementation libs.consLt // layouts complexos
+    implementation libs.adrxConstLt // layouts complexos
     implementation libs.material // experiência visual
     implementation libs.adrxActivity // base para fazer Activities
     implementation libs.adrxAppcompat // compatibilidade com versões antigas
     implementation libs.adrxAnnotat // necessário para usar @NonNull, @Nullable
-    implementation libs.lifeCycle // necessário pro classpath
+    implementation libs.adrxLifeCycle // necessário pro classpath
     testImplementation libs.junitAPI // api dp Junit 5
     testImplementation libs.mockitoCore // para usar o mockito
     testImplementation libs.mockitoJunit // para mockar métodos estáticos

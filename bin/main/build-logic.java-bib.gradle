@@ -1,49 +1,62 @@
 // Declaração dos plugins
 // plugins {}
 // Define o diretório de build
-project.layout.buildDirectory.set(providers.gradleProperty('buildDirJava').map {
-    project.rootProject.layout.projectDirectory.dir(it).dir(project.name) 
-})
+project.layout.buildDirectory.set(project.layout.dir(
+    providers.gradleProperty('buildDirJava').map { new File(project.rootDir, "${it}/${project.name}") }
+))
 // Manipulação do arquivo .classpath para o VSCODE parar de reclamar
-project.afterEvaluate {
-    File classpathArq = project.file('.classpath')
-    // Só tenta editar se o arquivo já existir (criado pelo VS Code)
-    if (classpathArq.exists() && classpathArq.canWrite()) {
+project.tasks.register('posBuildBib') {
+    group = 'Bib Actions'
+    description = 'Ajusta o .classpath do VS Code para incluir escopos de teste em bibliotecas Java'
+    // Pega a configuração e declara como um Input
+    Provider<RegularFile> classpathArqProv = project.providers.provider { 
+        project.layout.projectDirectory.file('.classpath') 
+    }
+    Provider<Set<FileSystemLocation>> testRuntime = project.configurations.named(
+        'testRuntimeClasspath'
+    ).flatMap { it.elements }
+
+    inputs.files(testRuntime)
+    outputs.upToDateWhen { false }
+    
+    doLast {
+        File classpathArq = classpathArqProv.get().asFile
+        // Se o VS Code não abriu e não gerou o arquivo, não faz nada.
+        if (!classpathArq.exists() || !classpathArq.canWrite()) { return }
+        
         String xmlArq = classpathArq.text
         StringBuilder novasEntradas = new StringBuilder()
-        org.gradle.api.artifacts.Configuration bibTest = project.configurations.findByName(
-            'testRuntimeClasspath'
-        )
         boolean eAlterado = false
-        // Verifica se a pasta src/test/java já está registrada
-        if (!xmlArq.contains('path=\"src/test/java\"')) {
+        
+        if (!xmlArq.contains('path="src/test/java"')) {
             novasEntradas.append(
-                '    <classpathentry kind=\"src\" output=\"bin/main\" path=\"src/test/java\">\n' +
+                '    <classpathentry kind="src" output="bin/main" path="src/test/java">\n' +
                 '        <attributes>\n' +
-                '            <attribute name=\"gradle_scope\" value=\"test\"/>\n' +
-                '            <attribute name=\"gradle_used_by_scope\" value=\"test\"/>\n' +
-                '            <attribute name=\"test\" value=\"true\"/>\n' +
+                '            <attribute name="gradle_scope" value="test"/>\n' +
+                '            <attribute name="gradle_used_by_scope" value="test"/>\n' +
+                '            <attribute name="test" value="true"/>\n' +
                 '        </attributes>\n' +
                 '    </classpathentry>\n'
             )
             eAlterado = true
         }
-        // Insere as biblioteas de teste
-        if (bibTest != null) {
-            bibTest.files.each { File arq ->
+        
+        if (testRuntime.isPresent()) {
+            testRuntime.get().each { FileSystemLocation location ->
+                File arq = location.asFile 
                 String caminho = arq.absolutePath.replace(File.separator, '/')
-                // Só arquivos .jar que não existe pra não duplicar, caminhos relativos ou absolutos
+                
                 if (caminho.endsWith('.jar') && !xmlArq.contains("path=\"${caminho}\"")) {
                     novasEntradas.append("    <classpathentry kind=\"lib\" path=\"${caminho}\"/>\n")
                     eAlterado = true
                 }
             }
         }
-        // Gravação do arquivo, insere as novas entradas antes do fechamento da tag </classpath>
+        
         if (eAlterado) {
             xmlArq = xmlArq.replace('</classpath>', "${novasEntradas.toString()}</classpath>")
             classpathArq.write(xmlArq)
-            println ">> INFO: .classpath de ${projNome} (Bib) atualizado com sucesso."
+            println ">> INFO: .classpath do VS Code atualizado com as bibliotecas de teste."
         }
     }
 }

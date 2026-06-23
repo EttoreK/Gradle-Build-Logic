@@ -5,19 +5,20 @@ plugins.apply(libs.plugins.buildLogicXcodeGeral.get().getPluginId()) // configur
 plugins.apply(libs.plugins.buildLogicXcodeActions.get().getPluginId()) // ações de build
 // Atalhos para facilitar a leitura
 Object ver = libs.versions
-XcConfig xcConfig = project.extensions.getByType(XcConfig)
+Object xcConfig = project.extensions.getByType(XcConfig)
+// Definição de provedores para acesso à valores de configuração e diretórios
 Provider<Map<String, String>> propsProv = providers.of(LeitorProps) { 
-    parameters.propertiesFile = rootProject.layout.projectDirectory.file(
-        providers.gradleProperty('localPropertiesNome')
-    )
+    String nomeArq = providers.gradleProperty('localPropertiesNome').getOrElse('local.properties')
+    parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
 }
 // Definição de provedores para acesso à valores de configuração e diretórios
 Provider<String> espNomeProv = providers.gradleProperty('espolioDir').orElse('espolio')
-Provider<Directory> xcassetsDirProv = project.providers.provider { 
-    project.rootProject.layout.projectDirectory.dir(
-        "${xcConfig.buildXDir.get()}/generated/Assets.xcassets"
-)}
-Provider<Directory> espolioDirProv = project.rootProject.layout.projectDirectory.dir(espNomeProv)
+Provider<Directory> xcassetsDirProv = xcConfig.rootDir.zip(xcConfig.buildXDir) { 
+    Directory raiz, String buildX -> raiz.dir("${buildX}/generated/Assets.xcassets") 
+}
+Provider<Directory> espolioDirProv = xcConfig.rootDir.zip(espNomeProv) { 
+    Directory raiz, String esp -> raiz.dir(esp) 
+}
 Provider<Directory> xcProjDirProv = xcConfig.projDir.zip(xcConfig.xcodeProj) { 
     Directory pDir, String caminho -> pDir.dir(caminho) // /app/app.xcodeproj
 }

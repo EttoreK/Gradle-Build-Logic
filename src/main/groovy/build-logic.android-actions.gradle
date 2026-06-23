@@ -2,13 +2,12 @@
 // plugins {}
 // Atalhos para facilitar a leitura
 Provider<Map<String, String>> propsProv = providers.of(LeitorProps) { 
-    parameters.propertiesFile = rootProject.layout.projectDirectory.file(
-        providers.gradleProperty('localPropertiesNome')
-    )
+    String nomeArq = providers.gradleProperty('localPropertiesNome').getOrElse('local.properties')
+    parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
 }
 // Limpa todo o diretório de build
 tasks.register('cleanAndroid') {
-    group = 'WebActions'
+    group = 'androidActions'
     description = 'Limpa os builds anteriores do Android'
     outputs.upToDateWhen { false }
     finalizedBy tasks.named('clean')
