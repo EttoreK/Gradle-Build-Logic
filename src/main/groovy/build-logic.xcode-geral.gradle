@@ -31,5 +31,6 @@ xcConfig.idTime.convention(propsProv.map { it.getOrDefault('apple.idTime', 'TAPA
 xcConfig.xcodeProj.convention(xcConfig.nomeApp.map { "${it}.xcodeproj" })
 xcConfig.testeUnitNome.convention(providers.gradleProperty('swiftTestDirUnit'))
 xcConfig.testeUiNome.convention(providers.gradleProperty('swiftTestDirUI'))
+xcConfig.testeIntgNome.convention(providers.gradleProperty('swiftTestDirIntg'))
 // Biblioteras para serem usadas no código
 // dependencies {}

@@ -24,6 +24,7 @@ abstract class XcConfig {
     abstract Property<String> getMacDono()
     abstract Property<String> getMacSede()
     abstract Property<String> getNomeApp()
+    abstract Property<String> getTesteIntgNome()
     abstract Property<String> getTesteUiNome()
     abstract Property<String> getTesteUnitNome()
     abstract Property<String> getVmAppDir()

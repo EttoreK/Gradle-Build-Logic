@@ -345,11 +345,33 @@ Closure<Void> xtest = { Task tarefa, String platforma, String sdk, Provider<Stri
     })
 }
 // Registra as tarefas de teste para cada plataforma e configuração
+tasks.register('testIosIntg', Exec) { xtest(it, 'ios', 'iphonesimulator', xcConfig.testeIntgNome) }
+tasks.register('testIosUnit', Exec) { xtest(it, 'ios', 'iphonesimulator', xcConfig.testeUnitNome)}
+tasks.register('testIosUi', Exec) { xtest(it, 'ios', 'iphonesimulator', xcConfig.testeUiNome) }
+tasks.register('testMacosIntg', Exec) { xtest(it, 'macos', 'macosx', xcConfig.testeIntgNome) }
 tasks.register('testMacosUnit', Exec) { xtest(it, 'macos', 'macosx', xcConfig.testeUnitNome) }
 tasks.register('testMacosUi', Exec) { xtest(it, 'macos', 'macosx', xcConfig.testeUiNome) }
-tasks.register('testIosUnit', Exec) { 
-    xtest(it, 'ios', 'iphonesimulator', xcConfig.testeUnitNome)}
-tasks.register('testIosUi', Exec) { xtest(it, 'ios', 'iphonesimulator', xcConfig.testeUiNome) }
+// Ordem das tarefas entre si
+tasks.named('testMacosUi').configure { mustRunAfter 'testMacosUnit' }
+tasks.named('testMacosIntg').configure { mustRunAfter 'testMacosUi' }
+tasks.named('testIosUi').configure { mustRunAfter 'testIosUnit' }
+tasks.named('testIosIntg').configure { mustRunAfter 'testIosUi' }
+// configura o "--continue" apenas para as compilações de Testes
+if (gradle.startParameter.taskNames.any { it.endsWith('testIos') || it.endsWith('testMacos') }) {
+    gradle.startParameter.continueOnFailure = true
+}
+// Tarefas de test geral MacOS
+tasks.register('testMacos') {
+    description = 'Executa todos os testes do macOS em sequência.'
+    group = 'Xcode Actions'
+    dependsOn tasks.named('testMacosUnit'), tasks.named('testMacosUi'), tasks.named('testMacosIntg')
+}
+// Tarefas de test geral iOS
+tasks.register('testIos') {
+    description = 'Executa todos os testes do iOS em sequência.'
+    group = 'Xcode Actions'
+    dependsOn tasks.named('testIosUnit'), tasks.named('testIosUi'), tasks.named('testIosIntg')
+}
 // Cria um arquivo .xcarchive para distribuição
 Closure<Void> xarchive = { Task tarefa, String platforma, String sdk ->
     tarefa.description = "Cria um arquivo .xcarchive para ${platforma.toUpperCase()} (Release)"

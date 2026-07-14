@@ -748,6 +748,9 @@ tasks.register('xproj') {
             ], [ 
                 nome: xcConfig.testeUiNome, tipo: 'bundle.ui-testing', sede: xcConfig.nomeApp, 
                 id: 'ui', arqs: xcConfig.testeUiNome.map { "${it}Files" } 
+            ], [ 
+                nome: xcConfig.testeIntgNome, tipo: 'bundle.unit-test', sede: xcConfig.nomeApp, 
+                id: 'ui', arqs: xcConfig.testeIntgNome.map { "${it}Files" } 
             ]
         ]
         List<Map<String, Object>> alvos = [ appAlvosMap ] + testAlvos 
