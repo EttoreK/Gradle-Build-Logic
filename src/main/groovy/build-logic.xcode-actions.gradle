@@ -4,8 +4,16 @@ plugins.apply(libs.plugins.buildLogicXcodeGeral.get().getPluginId())
 // application {} // Define configurações do swift-application (incompativel com gradle 9 [11/2025])
 // Atalhos para facilitar a leitura
 Object xcConfig = project.extensions.getByType(XcConfig)
-Provider<Map<String, String>> propsProv = providers.of(LeitorProps) { 
+Provider<Map<String, String>> localPropsProv = providers.of(LeitorProps) { 
     String nomeArq = providers.gradleProperty('localPropertiesNome').getOrElse('local.properties')
+    parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
+}
+Provider<Map<String, String>> progPropsProv = providers.of(LeitorProps) { 
+    String nomeArq = providers.gradleProperty('progPropertiesNome').getOrElse('programa.properties')
+    parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
+}
+Provider<Map<String, String>> secretoPropsProv = providers.of(LeitorProps) { 
+    String nomeArq = providers.gradleProperty('scrtPropertiesNome').getOrElse('programa.properties')
     parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
 }
 // Definição de provedores para acesso à valores de configuração e diretórios
@@ -15,11 +23,11 @@ Provider<String> vmXcodeDirProv = xcConfig.vmDir.zip(xcConfig.buildXDir) {
 Provider<Directory> xcDirProv = xcConfig.rootDir.zip(xcConfig.buildXDir) { 
     Directory raiz, String buildX -> raiz.dir(buildX) 
 }
-Provider<String> appleIdProv = propsProv.map { it.get('apple.appleId') }
-Provider<String> appleSenhaProv = propsProv.map { it.get('apple.senha') }
-Provider<String> certificadoProv = propsProv.map { it.get('apple.certificado') }
-Provider<String> nomePerfilProv = propsProv.map { it.get('apple.nomePerfil') }
-Provider<String> simuladorUsualProv = propsProv.map { it.get('simulador.ios') }
+Provider<String> appleIdProv = secretoPropsProv.map { it.get('apple.appleId') }
+Provider<String> appleSenhaProv = secretoPropsProv.map { it.get('apple.senha') }
+Provider<String> certificadoProv = secretoPropsProv.map { it.get('apple.certificado') }
+Provider<String> nomePerfilProv = secretoPropsProv.map { it.get('apple.nomePerfil') }
+Provider<String> simuladorUsualProv = localPropsProv.map { it.get('simulador.ios') }
 // Busca um simulador de iOS disponível e armazena em cache
 Closure<String> pegaSimulador = {
     String simuladorUsual = simuladorUsualProv.get()
@@ -82,6 +90,8 @@ tasks.register('syncToMac') { // caso necessário use "--rerun" para forçar a r
     description = 'Garante que o diretório existe, sincroniza os arquivos e ajusta as permissões.'
     group = 'MacOs Controller'
     onlyIf { !xcConfig.eMac.get() } // executa apenas se não for MacOS local
+    inputs.files(tasks.named('xproj'))
+    inputs.files(tasks.named('xIcone'))
     inputs.files(xcConfig.projDir.map { it.asFileTree.matching {
         exclude 'build/**'
         exclude '.gradle/**'
@@ -89,10 +99,8 @@ tasks.register('syncToMac') { // caso necessário use "--rerun" para forçar a r
     }})
     outputs.upToDateWhen { true } // só sincroniza 1 vez, neessário para não apagar as builds
 
-    Provider<Directory> espolioDirProv = xcConfig.rootDir.zip(
-        providers.gradleProperty('espolioDir').orElse('espolio')
-    ) { Directory raiz, String esp -> 
-        raiz.dir(esp) 
+    Provider<Directory> espolioDirProv = xcConfig.rootDir.zip(progPropsProv) { 
+        Directory raiz, String esp -> raiz.dir(esp.getOrDefault('espolioDir', 'espolio')) 
     }
     Provider<Directory> geradoDirProv = xcConfig.rootDir.zip(xcConfig.buildXDir) { 
         Directory raiz, String buildX -> raiz.dir("${buildX}/generated") 
@@ -383,7 +391,7 @@ Closure<Void> xarchive = { Task tarefa, String platforma, String sdk ->
     Provider<RegularFile> archiveArqProv = project.layout.file(project.provider { 
         new File(raizDir, pegaArchiveDir(platforma)) 
     })
-    Provider<String> categoriaProv = propsProv.map { 
+    Provider<String> categoriaProv = progPropsProv.map { 
         it.getOrDefault('apple.category', 'app-store-connect') 
     }
 

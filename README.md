@@ -203,37 +203,43 @@ Use `graldew` para Windows e `./gradlew` para Unix
 ./gradlew run['Macos' | 'Ios']['' | 'Release']
 ```
 
-05. Executa os testes para o alvo:
+05. Executa os testes específicos para o alvo:
 
 ```shell
-./gradlew test['Macos' | 'Ios']['Unit' | 'Ui']
+./gradlew test['Macos' | 'Ios']['Intg' | 'Unit' | 'Ui']
 ```
 
-06. Cria um arquivo .xcarchive para ao alvo (Release):
+06. Executa todos testes para o alvo:
+
+```shell
+./gradlew test['Macos' | 'Ios']
+```
+
+07. Cria um arquivo .xcarchive para ao alvo (Release):
 
 ```shell
 ./gradlew archive['Macos' | 'Ios']
 ```
 
-07. Exporta o apliativo.xcarchive para AppStore
+08. Exporta o apliativo.xcarchive para AppStore
 
 ```shell
 ./gradlew export['Macos' | 'Ios']
 ```
 
-08. Envia o pacote alvo exportado para o App Store Connect
+09. Envia o pacote alvo exportado para o App Store Connect
 
 ```shell
 ./gradlew submit['Macos' | 'Ios']
 ```
 
-09. Gera os arquivos do projeto .xcodeproj
+10. Gera os arquivos do projeto .xcodeproj
 
 ```shell
 ./gradlew xproj
 ```
 
-10. Gera o Assets.xcassets para o Xcode
+11. Gera o Assets.xcassets para o Xcode
 
 ```shell
 ./gradlew xIcone

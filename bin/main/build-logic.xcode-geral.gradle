@@ -3,18 +3,26 @@
 // Atalhos para libs.versions.toml para facilitar a leitura
 Object xcConfig = project.extensions.create('xcConfig', XcConfig)
 // Definição de provedores para acesso à valores de configuração e diretórios
-Provider<Map<String, String>> propsProv = providers.of(LeitorProps) { 
+Provider<Map<String, String>> localPropsProv = providers.of(LeitorProps) { 
     String nomeArq = providers.gradleProperty('localPropertiesNome').getOrElse('local.properties')
+    parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
+}
+Provider<Map<String, String>> progPropsProv = providers.of(LeitorProps) { 
+    String nomeArq = providers.gradleProperty('progPropertiesNome').getOrElse('programa.properties')
+    parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
+}
+Provider<Map<String, String>> secretoPropsProv = providers.of(LeitorProps) { 
+    String nomeArq = providers.gradleProperty('scrtPropertiesNome').getOrElse('programa.properties')
     parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
 }
 xcConfig.projDir.convention(project.layout.projectDirectory)
 xcConfig.rootDir.fileValue(project.rootDir)
 xcConfig.srcDir.convention(xcConfig.projDir.map { it.dir(XcConfig.MAIN_DIR) })
-xcConfig.nomeApp.convention(providers.gradleProperty('projNome'))
-xcConfig.buildXDir.convention(providers.gradleProperty('buildDirXcode'))
-xcConfig.macDono.convention(propsProv.map { it.get('mac.dono') })
-xcConfig.macSede.convention(propsProv.map { it.get('mac.sede') })
-xcConfig.macDir.convention(propsProv.map { it.get('mac.dir') })
+xcConfig.nomeApp.convention(progPropsProv.map { it.getOrDefault('projNome', 'Modelo') })
+xcConfig.buildXDir.convention(progPropsProv.map { it.getOrDefault('buildDirXcode', 'build/xcode') })
+xcConfig.macDono.convention(localPropsProv.map { it.get('mac.dono') })
+xcConfig.macSede.convention(localPropsProv.map { it.get('mac.sede') })
+xcConfig.macDir.convention(localPropsProv.map { it.get('mac.dir') })
 xcConfig.vmDir.convention(xcConfig.macDir.zip(xcConfig.nomeApp) { String dir, String app ->
     new File(dir, app).path.replace(File.separator, '/')
 })
@@ -27,10 +35,14 @@ xcConfig.eMac.convention(providers.systemProperty('os.name').map {
 xcConfig.xcIdPacoteApp.convention(providers.gradleProperty('appIdPacote').zip(xcConfig.nomeApp){
     String id, String app -> "${id}.${app.toLowerCase()}" 
 })
-xcConfig.idTime.convention(propsProv.map { it.getOrDefault('apple.idTime', 'TAPABURACO') })
+xcConfig.idTime.convention(secretoPropsProv.map { it.getOrDefault('apple.idTime', 'TAPABURACO') })
 xcConfig.xcodeProj.convention(xcConfig.nomeApp.map { "${it}.xcodeproj" })
-xcConfig.testeUnitNome.convention(providers.gradleProperty('swiftTestDirUnit'))
-xcConfig.testeUiNome.convention(providers.gradleProperty('swiftTestDirUI'))
-xcConfig.testeIntgNome.convention(providers.gradleProperty('swiftTestDirIntg'))
+xcConfig.testeUnitNome.convention(progPropsProv.map { 
+    it.getOrDefault('swiftTestDirUnit', 'UnitTests') 
+})
+xcConfig.testeUiNome.convention(progPropsProv.map { it.getOrDefault('swiftTestDirUI', 'UITests') })
+xcConfig.testeIntgNome.convention(progPropsProv.map { 
+    it.getOrDefault('swiftTestDirIntg', 'IntgTests') 
+})
 // Biblioteras para serem usadas no código
 // dependencies {}

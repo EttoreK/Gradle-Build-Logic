@@ -2,9 +2,13 @@
 // plugins {}
 // Atalhos para libs.versions.toml para facilitar a leitura
 Object ver = libs.versions
-Provider<Directory> espolioDirProv = project.layout.dir(
-    providers.gradleProperty('espolioDir').orElse('espolio').map { new File(project.rootDir, it) }
-)
+Provider<Map<String, String>> progPropsProv = providers.of(LeitorProps) { 
+    String nomeArq = providers.gradleProperty('progPropertiesNome').getOrElse('programa.properties')
+    parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
+}
+Provider<Directory> espolioDirProv = project.layout.dir( progPropsProv.map { 
+    new File(project.rootDir, it.getOrDefault('espolioDir', 'espolio')) 
+})
 // Definição das características do aplicativo
 android {
     // Configurações padrão para o aplicativo Android

@@ -3,6 +3,19 @@ plugins {
     alias libs.plugins.groovyGradle
 }
 
+final Properties propsProg = new Properties()
+rootDir.parentFile.listFiles().any { final File arq ->
+    if (arq.isFile() && arq.canRead()) {
+        arq.withInputStream { propsProg.load(it) }
+        if (propsProg.buildDirBuildLogic != null) { return true } 
+        else { propsProg.clear() }
+    }
+}
+// Alteração da saída de build do build-logic
+if (propsProg.buildDirBuildLogic) { 
+    layout.buildDirectory.set(new File(rootDir.parentFile, propsProg.buildDirBuildLogic)
+)}
+
 dependencies {
     implementation libs.proguard
 }

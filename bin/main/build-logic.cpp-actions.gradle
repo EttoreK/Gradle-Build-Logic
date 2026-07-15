@@ -1,8 +1,12 @@
 // Declaração dos plugins
 // plugins {}
 // Atalhos para facilitar a leitura
-Provider<Map<String, String>> propsProv = providers.of(LeitorProps) { 
+Provider<Map<String, String>> localPropsProv = providers.of(LeitorProps) { 
     String nomeArq = providers.gradleProperty('localPropertiesNome').getOrElse('local.properties')
+    parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
+}
+Provider<Map<String, String>> progPropsProv = providers.of(LeitorProps) { 
+    String nomeArq = providers.gradleProperty('progPropertiesNome').getOrElse('programa.properties')
     parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
 }
 // Definição de provedores para acesso à valores de configuração e diretórios
@@ -15,15 +19,15 @@ Provider<Boolean> eWindowsProv = providers.systemProperty('os.name').map {
 Provider<Boolean> eLinuxProv = providers.systemProperty('os.name').map {
     it.toLowerCase().contains('linux')
 }
-Provider<String> appNomeProv = providers.gradleProperty('projNome')
-Provider<String> espNomeProv = providers.gradleProperty('espolioDir').orElse('espolio')
-Provider<String> linDonoProv = propsProv.map { it.get('lin.dono') }
-Provider<String> linSedeProv = propsProv.map { it.get('lin.sede') }
-Provider<String> linDirProv = propsProv.map { it.get('lin.dir') }
-Provider<String> winDonoProv = propsProv.map { it.get('win.dono') }
-Provider<String> winSedeProv = propsProv.map { it.get('win.sede') }
-Provider<String> winDirProv = propsProv.map { it.get('win.dir') }
-Provider<String> winDiscProv = propsProv.map { it.getOrDefault('unidade.win', 'C') }
+Provider<String> appNomeProv = progPropsProv.map { it.getOrDefault('projNome', 'Modelo') }
+Provider<String> espNomeProv = progPropsProv.map { it.getOrDefault('espolioDir', 'espolio') }
+Provider<String> linDonoProv = localPropsProv.map { it.get('lin.dono') }
+Provider<String> linSedeProv = localPropsProv.map { it.get('lin.sede') }
+Provider<String> linDirProv = localPropsProv.map { it.get('lin.dir') }
+Provider<String> winDonoProv = localPropsProv.map { it.get('win.dono') }
+Provider<String> winSedeProv = localPropsProv.map { it.get('win.sede') }
+Provider<String> winDirProv = localPropsProv.map { it.get('win.dir') }
+Provider<String> winDiscProv = localPropsProv.map { it.getOrDefault('unidade.win', 'C') }
 Provider<Directory> espolioDirProv = project.layout.dir(
     espNomeProv.map { new File(project.rootDir, it) }
 )

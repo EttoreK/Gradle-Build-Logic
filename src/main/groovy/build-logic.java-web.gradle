@@ -1,9 +1,13 @@
 // Declaração dos plugins
 // plugins {}
+Provider<Map<String, String>> progPropsProv = providers.of(LeitorProps) { 
+    String nomeArq = providers.gradleProperty('progPropertiesNome').getOrElse('programa.properties')
+    parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
+}
 // Define o diretório de build usando o nome dinâmico da pasta
-project.layout.buildDirectory.set(project.layout.dir(
-    providers.gradleProperty('buildDirWeb').map { new File(project.rootDir, it) }
-))
+project.layout.buildDirectory.set(project.layout.dir( progPropsProv.map { 
+    new File(project.rootDir, it.getOrDefault('buildDirWeb', 'build/java/web')) 
+}))
 // Configurações do Spring e exclusão de bibliotecas padrão
 project.configurations {
     // Remove o todas as dependências de uma vez
@@ -28,9 +32,9 @@ project.sourceSets {
         resources {
             srcDirs += ['src/main/resources'] // mantém os recursos padrões
             // inclui o conteúdo da pasta espolio no Classpath
-            srcDirs += [project.layout.dir(providers.gradleProperty(
-                'espolioDir').orElse('espolio').map { new File(project.rootDir, it) }
-            )]
+            srcDirs += [project.layout.dir( progPropsProv.map { 
+                new File(project.rootDir, it.getOrDefault('espolioDir', 'espolio')) 
+            })]
         }
     }
 }
@@ -81,7 +85,7 @@ project.tasks.register('posBuildWeb') {
                     xmlArq = xmlArq.replace('</classpath>', "${novasBib.toString()}</classpath>")
                 }
                 classpathArq.text = xmlArq
-                println ">> INFO: .classpath de ${providers.gradleProperty('projNome')} atualizado."
+                println ">> INFO: .classpath de Android atualizado."
             }
         }
     }

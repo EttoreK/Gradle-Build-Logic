@@ -1,9 +1,13 @@
 // Declaração dos plugins
 // plugins {}
 // Define o diretório de build
-project.layout.buildDirectory.set(project.layout.dir(
-    providers.gradleProperty('buildDirJava').map { new File(project.rootDir, "${it}/${project.name}") }
-))
+Provider<Map<String, String>> progPropsProv = providers.of(LeitorProps) { 
+    String nomeArq = providers.gradleProperty('progPropertiesNome').getOrElse('programa.properties')
+    parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
+}
+project.layout.buildDirectory.set(project.layout.dir( progPropsProv.map { 
+    new File(project.rootDir, "{it.getOrDefault('buildDirJava', 'build/cpp')}/${project.name}") 
+}))
 // Manipulação do arquivo .classpath para o VSCODE parar de reclamar
 project.tasks.register('posBuildBib') {
     group = 'Bib Actions'

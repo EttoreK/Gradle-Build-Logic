@@ -7,12 +7,16 @@ plugins.apply(libs.plugins.buildLogicXcodeActions.get().getPluginId()) // açõe
 Object ver = libs.versions
 Object xcConfig = project.extensions.getByType(XcConfig)
 // Definição de provedores para acesso à valores de configuração e diretórios
-Provider<Map<String, String>> propsProv = providers.of(LeitorProps) { 
+Provider<Map<String, String>> localPropsProv = providers.of(LeitorProps) { 
     String nomeArq = providers.gradleProperty('localPropertiesNome').getOrElse('local.properties')
     parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
 }
+Provider<Map<String, String>> progPropsProv = providers.of(LeitorProps) { 
+    String nomeArq = providers.gradleProperty('progPropertiesNome').getOrElse('programa.properties')
+    parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
+}
 // Definição de provedores para acesso à valores de configuração e diretórios
-Provider<String> espNomeProv = providers.gradleProperty('espolioDir').orElse('espolio')
+Provider<String> espNomeProv = progPropsProv.map { it.getOrDefault('espolioDir', 'espolio') }
 Provider<Directory> xcassetsDirProv = xcConfig.rootDir.zip(xcConfig.buildXDir) { 
     Directory raiz, String buildX -> raiz.dir("${buildX}/generated/Assets.xcassets") 
 }
@@ -22,8 +26,10 @@ Provider<Directory> espolioDirProv = xcConfig.rootDir.zip(espNomeProv) {
 Provider<Directory> xcProjDirProv = xcConfig.projDir.zip(xcConfig.xcodeProj) { 
     Directory pDir, String caminho -> pDir.dir(caminho) // /app/app.xcodeproj
 }
-Provider<String> metodoProv = propsProv.map { it.getOrDefault('apple.metodo', 'app-store-connect') }
-Provider<String> appVerNumProv = providers.gradleProperty('appVerNum')
+Provider<String> metodoProv = progPropsProv.map { 
+    it.getOrDefault('apple.metodo', 'app-store-connect') 
+}
+Provider<String> appVerNumProv = progPropsProv.map { it.getOrDefault('appVerNum', '1') }
 // Busca a versão swift instalada na VM
 Closure<String> pegaVersaoSwift = {
     try {
@@ -166,7 +172,12 @@ Closure<String> criaPBXResourcesBuildPhase = { String faseArqsId, List<String> r
 // Construtores de elementos de Build Settings
 Closure<String> configuraBuild = { String nome, String alvo, String tipo, String config,
     String idPacote, String nomeApp, String verSwift, String plataforma ->
-    String testeTipo = alvo ? (tipo.contains('ui') ? 'UI' : '') : null
+    String testeTipo = null
+    if (alvo) {
+        if (tipo.contains('ui') && nome.contains('UI')) { testeTipo = 'UI' }
+        else if (tipo.contains('ui') && nome.contains('Intg')) { testeTipo = 'Intg' }
+        else if (tipo.contains('unit') && nome.contains('Unit')) { testeTipo = ''}
+    }
     String buildXDir = xcConfig.buildXDir.get()
     String comum = """
         ENABLE_APP_INTENTS_METADATA_EXTRACTION = NO;
@@ -208,6 +219,12 @@ Closure<String> configuraBuild = { String nome, String alvo, String tipo, String
             break
         case 'appmacos': return (comumApp + comumMacos).indent(4) + """
             COMBINE_HIDPI_IMAGES = YES;"""
+            break
+        case 'intgios': return (comumTeste + comumIos).indent(4) + """
+            TEST_HOST = \"\$(BUILT_PRODUCTS_DIR)/${nomeApp}.app/${nomeApp}\";"""
+            break
+        case 'intgmacos': return (comumTeste + comumMacos).indent(4) + """
+            TEST_HOST = \"\$(BUILT_PRODUCTS_DIR)/${nomeApp}.app/Contents/MacOS/${nomeApp}\";"""
             break
         case 'unitios': return (comumTeste + comumIos).indent(4) + """
             TEST_HOST = \"\$(BUILT_PRODUCTS_DIR)/${nomeApp}.app/${nomeApp}\";"""
@@ -750,7 +767,7 @@ tasks.register('xproj') {
                 id: 'ui', arqs: xcConfig.testeUiNome.map { "${it}Files" } 
             ], [ 
                 nome: xcConfig.testeIntgNome, tipo: 'bundle.unit-test', sede: xcConfig.nomeApp, 
-                id: 'ui', arqs: xcConfig.testeIntgNome.map { "${it}Files" } 
+                id: 'intg', arqs: xcConfig.testeIntgNome.map { "${it}Files" } 
             ]
         ]
         List<Map<String, Object>> alvos = [ appAlvosMap ] + testAlvos 
@@ -793,7 +810,7 @@ tasks.register('xIcone') {
 
     Provider<RegularFile> fundoSvgProv = espolioDirProv.map { it.file('icones/appBackground.svg') }
     Provider<RegularFile> frenteSvgProv = espolioDirProv.map { it.file('icones/appForeground.svg') }
-    Provider<String> winDiscProv = propsProv.map { it.getOrDefault('unidade.win', 'C') }
+    Provider<String> winDiscProv = localPropsProv.map { it.getOrDefault('unidade.win', 'C') }
     
     inputs.files(fundoSvgProv, frenteSvgProv)
     outputs.dir xcassetsDirProv

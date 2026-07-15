@@ -2,18 +2,31 @@
 // plugins {}
 plugins.apply(libs.plugins.buildLogicAndroidGeral.get().getPluginId()) // configurações do android
 plugins.apply(libs.plugins.buildLogicAndroidActions.get().getPluginId()) // ações de build
+// Propriedades do Projeto
+Provider<Map<String, String>> progPropsProv = providers.of(LeitorProps) { 
+    String nomeArq = providers.gradleProperty('progPropertiesNome').getOrElse('programa.properties')
+    parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
+}
 // Define o diretório de build
-Provider<String> projNomeProv = providers.gradleProperty('projNome')
-project.layout.buildDirectory.set(project.layout.dir(
-    providers.gradleProperty('buildDirAndroid').map { new File(project.rootDir, it) }
-))
+Provider<String> projNomeProv = progPropsProv.map { it.getOrDefault('projNome', 'Modelo') }
+Provider<String> idPacoteProv = progPropsProv.map { it.getOrDefault('appIdPacote', 'com.modelo') }
+Provider<String> mainPacoteProv = progPropsProv.map { it.getOrDefault('javaMainPacote', '.app') }
+Provider<String> testPacoteProv = progPropsProv.map { it.getOrDefault('javaTestPacote', '.test') }
+Provider<String> verNomeProv = progPropsProv.map { it.getOrDefault('appVerNome', '0.0.1') }
+Provider<String> verNumProv = progPropsProv.map { it.getOrDefault('appVerNum', '1') }
+project.layout.buildDirectory.set(project.layout.dir( progPropsProv.map { 
+    new File(project.rootDir, it.getOrDefault('buildDirAndroid', 'build/java/android')) 
+}))
 // Definição das características do aplicativo
 android {
+    // ids para pacotes do app e testes
+    namespace = idPacoteProv.get().concat(mainPacoteProv.get())
+    testNamespace = idPacoteProv.get().concat(testPacoteProv.get())
     // Configurações padrão para o aplicativo Android
     defaultConfig {
-        applicationId "${providers.gradleProperty('appIdPacote').get()}.${projNomeProv.get()}" // id
-        versionCode providers.gradleProperty('appVerNum').get().toInteger() // versão Google Play
-        versionName providers.gradleProperty('appVerNome').get() // nome da ver exibido aos usuários
+        applicationId "${idPacoteProv.get()}.${projNomeProv.get()}" // id do aplicativo
+        versionCode verNumProv.get().toInteger() // versão de registro no Google Play
+        versionName verNomeProv.get() // nome da versão em exibição
     }
 
     bundle {
@@ -74,7 +87,6 @@ dependencies {
     androidTestImplementation libs.adrxTestEspresso // framework do Andoird para testes
     androidTestImplementation libs.adrxTestExtJunit // empacota tudo isso e manda o executor do Java
     androidTestImplementation libs.adrxTestRules // cria atalhos fáceis para abrir e fechar as telas
-    implementation libs.adrxConstLt // layouts complexos
     implementation libs.material // experiência visual
     implementation libs.adrxActivity // base para fazer Activities
     implementation libs.adrxAppcompat // compatibilidade com versões antigas

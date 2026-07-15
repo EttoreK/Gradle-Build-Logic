@@ -1,8 +1,12 @@
 // Declaração dos plugins
 // plugins {}
 // Atalhos para facilitar a leitura
-Provider<Map<String, String>> propsProv = providers.of(LeitorProps) { 
+Provider<Map<String, String>> localPropsProv = providers.of(LeitorProps) { 
     String nomeArq = providers.gradleProperty('localPropertiesNome').getOrElse('local.properties')
+    parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
+}
+Provider<Map<String, String>> progPropsProv = providers.of(LeitorProps) { 
+    String nomeArq = providers.gradleProperty('progPropertiesNome').getOrElse('programa.properties')
     parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
 }
 // Limpa todo o diretório de build
@@ -158,7 +162,7 @@ tasks.register('runSimulatorAndroid', Exec){
     mustRunAfter tasks.named('installDebug')
     outputs.upToDateWhen { false }
 
-    Provider<String> projNomeProv = providers.gradleProperty('projNome')
+    Provider<String> projNomeProv = progPropsProv.map { it.getOrDefault('projNome', 'Modelo') }
     Provider<String> appIdProv = providers.gradleProperty('appIdPacote')
 
     executable = 'adb'
@@ -194,7 +198,7 @@ tasks.register('runAndroid') {
             }
             // Pega a primeira linha, primeiro simulador encontrado
             return texto.lines().findFirst().map { it.trim() }.orElse(null)
-        }.orElse(project.providers.provider { propsProv.get().get('simulador.android') })
+        }.orElse(project.providers.provider { localPropsProv.get().get('simulador.android') })
     )
 
     doFirst {
@@ -218,7 +222,7 @@ tasks.register('runAndroid') {
         // Detecção básica de SO para rodar o comando 'start' (Windows) ou '&' (Linux/Mac)
         if (System.getProperty('os.name').toLowerCase().contains('windows')) {
             String filtro = 'findstr /V ' + saidaFiltro.collect { 
-                "/${propsProv.get().getOrDefault('unidade.win', 'C')}:\"${it}\"" 
+                "/${localPropsProv.get().getOrDefault('unidade.win', 'C')}:\"${it}\"" 
             }.join(' ')
             new ProcessBuilder(
                 'cmd', '/c', "start cmd /k \"${parametros} 2>&1 | ${filtro}\""

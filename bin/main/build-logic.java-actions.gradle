@@ -1,8 +1,16 @@
 // Declaração de plugins
 // plugins {}
 // Atalhos para facilitar a leitura
-Provider<Map<String, String>> propsProv = providers.of(LeitorProps) { 
+Provider<Map<String, String>> localPropsProv = providers.of(LeitorProps) { 
     String nomeArq = providers.gradleProperty('localPropertiesNome').getOrElse('local.properties')
+    parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
+}
+Provider<Map<String, String>> progPropsProv = providers.of(LeitorProps) { 
+    String nomeArq = providers.gradleProperty('progPropertiesNome').getOrElse('programa.properties')
+    parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
+}
+Provider<Map<String, String>> secretoPropsProv = providers.of(LeitorProps) { 
+    String nomeArq = providers.gradleProperty('scrtPropertiesNome').getOrElse('programa.properties')
     parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
 }
 // Provedores para acesso lazy às variáveis
@@ -11,9 +19,9 @@ Provider<Boolean> eWindowsProv = providers.systemProperty('os.name').map {
 }
 Provider<Directory> buildDirProv = project.layout.buildDirectory
 Provider<Directory> deployDirProv = buildDirProv.dir('distributions')
-Provider<String> nomeAppProv = providers.gradleProperty('projNome')
-Provider<String> espNomeProv = providers.gradleProperty('espolioDir').orElse('espolio')
-Provider<String> verNumProv = providers.gradleProperty('appVerNum')
+Provider<String> nomeAppProv = progPropsProv.map { it.getOrDefault('projNome', 'Modelo') }
+Provider<String> espNomeProv = progPropsProv.map { it.getOrDefault('espolioDir', 'espolio') }
+Provider<String> verNumProv = progPropsProv.map { it.getOrDefault('appVerNum', '1') }
 Provider<Boolean> jarMagroProv = project.providers.gradleProperty('buildMagroWeb').map { 
     it.toBoolean() }.orElse( project.providers.provider { 
         gradle.startParameter.taskNames.contains('submitWeb') //verifica qual tarefa chamou o build
@@ -228,6 +236,8 @@ tasks.register('webIco') {
         File fundoSVG = fundoSvgProv.get().asFile
         File frenteSVG = frenteSvgProv.get().asFile
         File pngArq = pngArqProv.get().asFile
+        String magik = !eWindowsProv.get() ? 'magick' :
+            "${localPropsProv.get().getOrDefault('unidade.win', 'C')}:/msys64/ucrt64/bin/magick.exe"
         if (!fundoSVG.exists()) throw new GradleException('Faltou o SVG de Fundo!')
         if (!frenteSVG.exists()) throw new GradleException('Faltou o SVG de Frente!')
         
@@ -235,9 +245,7 @@ tasks.register('webIco') {
         if (!buildDir.exists()) buildDir.mkdirs()
         
         Process processo = [
-            eWindowsProv.get() ? 
-                "${propsProv.get().getOrDefault('unidade.win', 'C')}:/msys64/ucrt64/bin/magick.exe" 
-            : 'magick',
+            magik, 
             '-background', 'none',
             fundoSVG.absolutePath, 
             frenteSVG.absolutePath, 
@@ -262,10 +270,10 @@ tasks.register('submitWeb') {
     inputs.files(tasks.named('orderLibs'))
 
     doLast {
-        String dono = propsProv.get().get('srv.dono')
-        String sede = propsProv.get().get('srv.sede')
-        String dir = propsProv.get().get('srv.dir')
-        String servico = propsProv.get().get('srv.servico')
+        String dono = secretoPropsProv.get().get('srv.dono')
+        String sede = secretoPropsProv.get().get('srv.sede')
+        String dir = secretoPropsProv.get().get('srv.dir')
+        String servico = secretoPropsProv.get().get('srv.servico')
         String appJar = "${nomeAppProv.get().toString().toLowerCase()}.jar"
 
         if (!dono || !sede || !dir) {
