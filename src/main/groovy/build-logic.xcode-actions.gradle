@@ -100,7 +100,8 @@ tasks.register('syncToMac') { // caso necessário use "--rerun" para forçar a r
     outputs.upToDateWhen { true } // só sincroniza 1 vez, neessário para não apagar as builds
 
     Provider<Directory> espolioDirProv = xcConfig.rootDir.zip(progPropsProv) { 
-        Directory raiz, String esp -> raiz.dir(esp.getOrDefault('espolioDir', 'espolio')) 
+        Directory raiz, Map<String, String> esp -> 
+        raiz.dir(esp.getOrDefault('espolioDir', 'espolio')) 
     }
     Provider<Directory> geradoDirProv = xcConfig.rootDir.zip(xcConfig.buildXDir) { 
         Directory raiz, String buildX -> raiz.dir("${buildX}/generated") 

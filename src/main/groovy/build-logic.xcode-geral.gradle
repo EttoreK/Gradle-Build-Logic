@@ -32,8 +32,9 @@ xcConfig.vmAppDir.convention(xcConfig.vmDir.map {
 xcConfig.eMac.convention(providers.systemProperty('os.name').map { 
     it.toLowerCase().contains('mac') 
 })
-xcConfig.xcIdPacoteApp.convention(providers.gradleProperty('appIdPacote').zip(xcConfig.nomeApp){
-    String id, String app -> "${id}.${app.toLowerCase()}" 
+xcConfig.xcIdPacoteApp.convention(progPropsProv.zip(xcConfig.nomeApp){ 
+    Map<String, String> props, String app -> 
+    "${props.getOrDefault('appIdPacote', 'com.modelo')}.${app.toLowerCase()}" 
 })
 xcConfig.idTime.convention(secretoPropsProv.map { it.getOrDefault('apple.idTime', 'TAPABURACO') })
 xcConfig.xcodeProj.convention(xcConfig.nomeApp.map { "${it}.xcodeproj" })

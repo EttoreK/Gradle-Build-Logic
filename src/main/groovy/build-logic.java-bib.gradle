@@ -6,7 +6,7 @@ Provider<Map<String, String>> progPropsProv = providers.of(LeitorProps) {
     parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
 }
 project.layout.buildDirectory.set(project.layout.dir( progPropsProv.map { 
-    new File(project.rootDir, "{it.getOrDefault('buildDirJava', 'build/cpp')}/${project.name}") 
+    new File(project.rootDir, "${it.getOrDefault('buildDirJava', 'build/java')}/${project.name}") 
 }))
 // Manipulação do arquivo .classpath para o VSCODE parar de reclamar
 project.tasks.register('posBuildBib') {
@@ -46,8 +46,8 @@ project.tasks.register('posBuildBib') {
         }
         
         if (testRuntime.isPresent()) {
-            testRuntime.get().each { FileSystemLocation location ->
-                File arq = location.asFile 
+            testRuntime.get().each { FileSystemLocation loc ->
+                File arq = loc.asFile 
                 String caminho = arq.absolutePath.replace(File.separator, '/')
                 
                 if (caminho.endsWith('.jar') && !xmlArq.contains("path=\"${caminho}\"")) {

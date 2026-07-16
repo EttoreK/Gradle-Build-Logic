@@ -163,7 +163,7 @@ tasks.register('runSimulatorAndroid', Exec){
     outputs.upToDateWhen { false }
 
     Provider<String> projNomeProv = progPropsProv.map { it.getOrDefault('projNome', 'Modelo') }
-    Provider<String> appIdProv = providers.gradleProperty('appIdPacote')
+    Provider<String> appIdProv = progPropsProv.map { it.getOrDefault('appIdPacote', 'com.modelo') }
 
     executable = 'adb'
     argumentProviders.add(new CommandLineArgumentProvider() {

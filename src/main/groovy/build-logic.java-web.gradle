@@ -73,8 +73,9 @@ project.tasks.register('posBuildWeb') {
             }
             xmlArq = linhasLimpas.join('\n')
 
-            compDepProv.get().each { File arq ->
-                String caminho = arq.asFile.absolutePath.replace(File.separator, '/')
+            compDepProv.get().each { FileSystemLocation loc ->
+                File arq = loc.asFile
+                String caminho = arq.absolutePath.replace(File.separator, '/')
                 if (caminho.endsWith('.jar') && !xmlArq.contains("path=\"${caminho}\"")) {
                     novasBib.append("    <classpathentry kind=\"lib\" path=\"${caminho}\"/>\n")
                 }
@@ -85,7 +86,7 @@ project.tasks.register('posBuildWeb') {
                     xmlArq = xmlArq.replace('</classpath>', "${novasBib.toString()}</classpath>")
                 }
                 classpathArq.text = xmlArq
-                println ">> INFO: .classpath de Android atualizado."
+                println ">> INFO: .classpath de Java-Web atualizado."
             }
         }
     }
