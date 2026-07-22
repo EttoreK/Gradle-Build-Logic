@@ -9,6 +9,10 @@ Provider<Map<String, String>> progPropsProv = providers.of(LeitorProps) {
     String nomeArq = providers.gradleProperty('progPropertiesNome').getOrElse('programa.properties')
     parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
 }
+Provider<Map<String, String>> secretoPropsProv = providers.of(LeitorProps) { 
+    String nomeArq = providers.gradleProperty('scrtPropertiesNome').getOrElse('programa.properties')
+    parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
+}
 // Definição de provedores para acesso à valores de configuração e diretórios
 Provider<Directory> buildDirProv = project.layout.buildDirectory
 Provider<Directory> instllDirProv = buildDirProv.dir('install/main')
@@ -237,19 +241,60 @@ Closure<List<String>> pegaFlagsLink = { String alvo, String arqtt, String config
 
     if (alvo.toLowerCase() == 'windows') {
         flags.addAll([
-            '-static', 
+            // Força o uso de arquivos estáticos
+            '-Wl,-Bstatic',
             '-Wl,--start-group', 
+            // A Biblioteca Principal
+            '-lcurl',
+            '-ljsoncpp',
+            // Protocolos de rede
+            '-lnghttp2', // HTTP/2
+            '-lnghttp3', // HTTP/3
+            '-lngtcp2_crypto_ossl', // criptografia para QUIC/HTTP3
+            '-lngtcp2', // QUIC/HTTP3
+            '-lssh2', // para SFTP/SSH
+            // Resolução de domínios e texto
+            '-lpsl', // public Suffix List
+            '-lidn2',
+            '-lunistring',
+            '-liconv',
+            // Compressores
+            '-lzstd',
+            '-lbrotlidec',
+            '-lbrotlicommon',
+            // Criptografia Base
+            '-lssl',
+            '-lcrypto', // criptografia base
+            '-lz', // compressão (frequentemente exigido pelo ssh2/ssl)
+            '-lssl',
+            '-lcrypto',
+            '-lz',
+            '-liconv',
+            '-Wl,--end-group',
+            // Volta para dinâmico
+            '-Wl,-Bdynamic',
+            '-Wl,--start-group', 
+            // GUI do Windows
             '-lgdi32', 
             '-luser32', 
             '-luxtheme', 
             '-loleaut32', 
             '-lcomctl32', 
-            '-ljsoncpp'
+            '-lmsimg32',
+            // Sistema, Rede e Criptografia nativa
+            '-ladvapi32',
+            '-lws2_32', // Winsock2 (Rede)
+            '-lcrypt32', // criptografia/Certificados (Schannel)
+            '-lwldap32', // resolve os erros __imp_ldap_
+            '-liphlpapi', // resolve o erro `if_nametoindex`
+            '-lbcrypt', // geralmente exigido pelo OpenSSL no Windows
+            '-lsecur32', // resolve o erro InitSecurityInterfaceA
+            '-Wl,--end-group'
         ])
         
         if (eTeste) { flags.addAll(['-lgtest', '-lgtest_main', '-lpthread']) }
          
-        flags.addAll(['-Wl,--end-group', '-static-libgcc', '-static-libstdc++'])
+        flags.addAll(['-static-libgcc', '-static-libstdc++'])
         // Esconde o console se for Release e não for Teste
         if (config == 'Release' && !eTeste) { flags << '-mwindows' }
     } 
@@ -277,6 +322,7 @@ Closure<List<String>> pegaFlagsLink = { String alvo, String arqtt, String config
             '-Wl,-Bdynamic', 
             '-lwayland-client', 
             '-lfontconfig', 
+            '-lcurl',
             '-pthread', 
             '-static-libgcc', 
             '-static-libstdc++'
@@ -437,7 +483,14 @@ tasks.register('criaEspolio') {
     inputs.dir espolioDirProv
     outputs.file(new File(genDirProv.get().asFile, "${espNomeProv.get()}.hpp"))
     
-    doLast { embuteRes() }
+    doLast { 
+        embuteRes() 
+
+        String chave = secretoPropsProv.get().getOrDefault('APP_CHAVE_CONF', 'CHAVE_FALTANDO')
+        File segHpp = new File(genDirProv.get().asFile, 'seguranca.hpp')
+        segHpp.parentFile.mkdirs()
+        segHpp.text = "#pragma once\n#define APP_CHAVE_CONF \"${chave}\"\n"
+    }
 }
 // Verifica e instala dependências automaticamente
 tasks.register('instalaDeps') {
@@ -455,7 +508,19 @@ tasks.register('instalaDeps') {
             'mingw-w64-ucrt-x86_64-imagemagick',
             'mingw-w64-ucrt-x86_64-librsvg',
             'mingw-w64-ucrt-x86_64-gtest',
-            'mingw-w64-i686-gtest' 
+            'mingw-w64-i686-gtest',
+            'mingw-w64-ucrt-x86_64-curl',
+            'mingw-w64-i686-curl',
+            'mingw-w64-ucrt-x86_64-ngtcp2',
+            'mingw-w64-i686-ngtcp2',
+            'mingw-w64-ucrt-x86_64-nghttp3',
+            'mingw-w64-i686-nghttp3',
+            'mingw-w64-ucrt-x86_64-nghttp2',
+            'mingw-w64-i686-nghttp2',
+            'mingw-w64-ucrt-x86_64-libssh2',
+            'mingw-w64-i686-libssh2',
+            'mingw-w64-ucrt-x86_64-libpsl',
+            'mingw-w64-i686-libpsl'
         ]
         try {
             Process processoWin = comandoRemoto('windows', [
@@ -485,7 +550,9 @@ tasks.register('instalaDeps') {
             'libjsoncpp-dev',
             'libjsoncpp-dev:i386',
             'imagemagick',
-            'librsvg2-bin' 
+            'librsvg2-bin',
+            'libcurl4-openssl-dev',
+            'libcurl4-openssl-dev:i386'
         ]
         try {
             Process processoLin = comandoRemoto('linux', [
