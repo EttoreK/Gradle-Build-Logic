@@ -14,8 +14,9 @@ Provider<Map<String, String>> secretoPropsProv = providers.of(LeitorProps) {
     parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
 }
 // Definição de provedores para acesso à valores de configuração e diretórios
+Provider<Directory> projDirProv = project.providers.provider { project.layout.projectDirectory }
 Provider<Directory> buildDirProv = project.layout.buildDirectory
-Provider<Directory> instllDirProv = buildDirProv.dir('install/main')
+Provider<String> instllDirProv = buildDirProv.dir('install')
 Provider<Directory> genDirProv = buildDirProv.dir('tmp/generated')
 Provider<Boolean> eWindowsProv = providers.systemProperty('os.name').map {
     it.toLowerCase().contains('windows')
@@ -35,7 +36,6 @@ Provider<String> winDiscProv = localPropsProv.map { it.getOrDefault('unidade.win
 Provider<Directory> espolioDirProv = project.layout.dir(
     espNomeProv.map { new File(project.rootDir, it) }
 )
-Provider<Directory> projDirProv = project.providers.provider { project.layout.projectDirectory }
 // Se necessário encapsula o comando em uma chamada ssh para a VM
 Closure<List<String>> comandoRemoto = { String os, List<String> entradaCmds, String extDir = null ->
     if (eWindowsProv.get() && os == 'linux') {
@@ -555,9 +555,10 @@ tasks.register('instalaDeps') {
             'libcurl4-openssl-dev:i386'
         ]
         try {
-            Process processoLin = comandoRemoto('linux', [
-                // Adiciona a arquitetura i386 antes de dar o apt update
-                "sudo dpkg --add-architecture i386 && sudo apt update && sudo apt install -y ${linDeps.join(' ')}"
+            Process processoLin = comandoRemoto('linux', [ // Adiciona a arquitetura i386
+                "sudo dpkg --add-architecture i386", "&&", 
+                "sudo apt update", "&&", 
+                "sudo apt install", "-y", "${linDeps.join(' ')}"
             ]).execute()
             processoLin.waitForProcessOutput(System.out, System.err)
             
@@ -570,7 +571,6 @@ tasks.register('instalaDeps') {
 // Centralização de compilação
 Closure<Void> cbuild = { Task tarefa, String alvo, String arqtt, String config ->
     String osAlvo = alvo.toLowerCase()
-    String appDir = "build/install/main/${config}/${alvo}/${arqtt}/lib".toLowerCase()
 
     tarefa.group = 'C++ Actions'
     tarefa.description = "Compila nativamente via SSH em ${alvo}-${arqtt}"
@@ -586,6 +586,8 @@ Closure<Void> cbuild = { Task tarefa, String alvo, String arqtt, String config -
 
     tarefa.doLast {
         List<String> gppFlags = []
+        String appDir = "main/${config}/${alvo}/${arqtt}/lib".toLowerCase()
+        // String appDir = "${relativo}/main/${config}/${alvo}/${arqtt}/lib".toLowerCase()
         if (osAlvo == 'windows') {
             gppFlags.add(
                 "${winDiscProv.get()}:/msys64/${arqtt == 'X86' ? 'mingw32' : 'ucrt64'}/bin/g++.exe"
@@ -610,19 +612,18 @@ Closure<Void> cbuild = { Task tarefa, String alvo, String arqtt, String config -
         // Insere do ícone do Windows
         if (osAlvo == 'windows') {
             if (eWindowsProv.get()) { 
-                gppFlags.add(
-                    (new File(buildDirProv.get().asFile, 
-                        (arqtt == 'X86' ? 'icone32.o' : 'icone64.o')
-                    )).absolutePath.replace(File.separator, '/')
-                )
+                gppFlags.add((new File(
+                    buildDirProv.get().asFile, (arqtt == 'X86' ? 'icone32.o' : 'icone64.o')
+                )).absolutePath.replace(File.separator, '/'))
             } else { 
                 gppFlags << (arqtt == 'X86' ? 'build/icons/icone32.o' : 'build/icons/icone64.o')
             }
         }
 
         gppFlags.addAll(pegaFlagsLink(alvo, arqtt, config, false)) // injeção de flags
-        
-        File rootDir = projDir.asFile.parentFile // cria a pasta final na VM
+        String appNome = appNomeProv.get()
+        String nomeExe = alvo == 'Windows' ? "${appNome}.exe" : appNome
+        String saidaDir // saída do binário
         // Prepara o Wayland remotamente (Apenas para Linux)
         if (osAlvo == 'linux') {
             String xmlArq = '/usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml'
@@ -640,27 +641,16 @@ Closure<Void> cbuild = { Task tarefa, String alvo, String arqtt, String config -
         }
 
         if (eWindowsProv.get() && osAlvo == 'windows') {
-            new File(rootDir, appDir).mkdirs() // cria localmente na raiz do Windows
+            // Local no Windows usa Caminho Absoluto direto, sem matemática
+            File destFolder = new File(instllDirProv.get().asFile, appDir)
+            destFolder.mkdirs()
+            saidaDir = new File(destFolder, nomeExe).absolutePath.replace('\\', '/')
         } else {
-            String dirCmd
-            if (osAlvo == 'windows') {
-                dirCmd = "if not exist \"${appDir.replace(File.separator, '/')}\""
-                dirCmd += "mkdir \"${appDir.replace(File.separator, '/')}\""
-            } else {
-                dirCmd = "mkdir -p '${appDir}'"
-            } 
-            comandoRemoto(osAlvo, [dirCmd]).execute().waitForProcessOutput(System.out, System.err)
-        }
-        String appNome = appNomeProv.get()
-        String nomeExe = alvo == 'Windows' ? "${appNome}.exe" : appNome
-        String saidaDir // saída do binário
-        if (eWindowsProv.get() && osAlvo == 'windows') {
-            saidaDir = new File(rootDir, 
-                "${appDir}/${nomeExe}").absolutePath.replace(File.separator, '/')
-        } else {
-            // Na VM Remota, o saidaDir é puro e direto
-            saidaDir = "${appDir}/${nomeExe}"
-            if (osAlvo == 'windows') saidaDir = saidaDir.replace(File.separator, '/')
+            // Remoto no SSH sempre será "build/..." a partir da raiz da VM
+            String appDirRemoto = "build/install/${appDir}"
+            String dirCmd = (osAlvo == 'windows' ? "if not exist \"${appDirRemoto.replace('/', '\\')}\" mkdir \"${appDirRemoto.replace('/', '\\')}\"" : "mkdir -p '${appDirRemoto}'")
+            comandoRemoto(osAlvo, [dirCmd]).execute().waitForProcessOutput()
+            saidaDir = "${appDirRemoto}/${nomeExe}"
         }
         gppFlags << '-o' << "\"${saidaDir}\""
 
@@ -690,7 +680,7 @@ tasks.register('buildLin32') { cbuild(it, 'Linux', 'X86', 'Debug') }
 tasks.register('buildLin32Release') { cbuild(it, 'Linux', 'X86', 'Release') }
 // Closure centralização de execução
 Closure<Void> crun = { Task tarefa, String alvo, String arqtt, String config ->
-    String appDir = "${config}/${alvo}/${arqtt}/lib".toLowerCase()
+    String appDir = "main/${config}/${alvo}/${arqtt}/lib".toLowerCase()
     String tarefaNativaNome = "install${config}${alvo}${arqtt}"
     String buildNome = "build${alvo == 'Windows' ? 'Win' : 'Lin'}${arqtt == 'X86' ? '32' : '64'}"
 
@@ -710,31 +700,26 @@ Closure<Void> crun = { Task tarefa, String alvo, String arqtt, String config ->
         String nomeExe = alvo == 'Windows' ? "${appNome}.exe" : appNome
         
         List<String> cmds
-        if (osAlvo == 'windows') {
-            if (eWindowsProv.get()) {
-                String local = new File(projDirProv.get().asFile.parentFile, 
-                    "build/install/main/${appDir}").absolutePath
-                cmds = ["cd /d \"${local}\"", '&&', 'start', '\"\"', nomeExe]
-            } else {
-                String remoto = "build/install/main/${appDir}"
-                cmds = [
-                    "cd \"${remoto.replace(File.separator, '/')}\"", 
-                    '&&', 'start', '\"\"', nomeExe
-                ]
-            }
+        if (eWindowsProv.get() && osAlvo == 'windows') {
+            File exeDir = new File(instllDirProv.get().asFile, appDir)
+            cmds = ["cd /d \"${exeDir.absolutePath}\"", '&&', 'start', '\"\"', nomeExe]
         } else {
-            cmds = [
-                'export XDG_RUNTIME_DIR=/run/user/$(id -u)', '&&',
-                'export WAYLAND_DISPLAY=wayland-0', '&&',
-                'export DISPLAY=:0', '&&',
-                "cd \'build/install/main/${appDir}\'", '&&',
-                "setsid sh -c \'exec ./${nomeExe} > /dev/null 2>&1 < /dev/null &\' > /dev/null 2>&1"
-            ]
+            String appDirRemoto = "build/install/${appDir}"
+            if (osAlvo == 'windows') { 
+                cmds = ["cd \"${appDirRemoto.replace('/', '\\')}\"", '&&', 'start', '\"\"', nomeExe] 
+            } else { 
+                cmds = [
+                    'export XDG_RUNTIME_DIR=/run/user/$(id -u)', '&&', 
+                    'export WAYLAND_DISPLAY=wayland-0', '&&', 'export DISPLAY=:0', '&&', 
+                    "cd \'${appDirRemoto}\'", '&&', 
+                    "setsid sh -c \'exec ./${nomeExe} > /dev/null 2>&1 < /dev/null &\' > /dev/null 2>&1"
+                ] 
+            }
         }
         // Ícone do desktop só faz sentido se estiver rodando localmente no Linux
-        if (osAlvo == 'linux' && eLinuxProv.get()) {
-            desktop(appNome, new File(instllDirProv.get().dir(appDir).asFile, nomeExe).absolutePath)
-        }
+        if (osAlvo == 'linux' && eLinuxProv.get()) {desktop(
+            appNome, new File(instllDirProv.get().asFile, "${appDir}/${nomeExe}").absolutePath
+        )}
 
         println ">> INFO: Executando ${alvo}..."
         String dirDireto = null
@@ -773,10 +758,16 @@ Closure<Void> ctest = { Task tarefa, String alvo, String arqtt, String config ->
     tarefa.doFirst {
         String appTestNome = "${appNomeProv.get()}Test" 
         String osAlvo = alvo.toLowerCase()
-        String nomeExe = alvo == 'Windows' ? "${appTestNome}.exe" : appTestNome        
+        String nomeExe = alvo == 'Windows' ? "${appTestNome}.exe" : appTestNome
+        String relativo = buildDirProv.get().asFile.toPath().toString().replace('\\', '/').replace(
+            projDirProv.get().asFile.toPath().toString().replace('\\', '/') + "/", ""
+        )
         // Cópia local de recursos antes do teste
-        File exeDir = buildDirProv.get().dir('install/test').dir(testDir).asFile
-        copiaRes(exeDir)
+        File exeDirLocal = new File(buildDirProv.get().asFile, "install/test/${testDirRel}")
+        copiaRes(exeDirLocal)
+        // File exeDir = buildDirProv.get().dir('install/test').dir(testDir).asFile
+        // String appDir = "${relativo}/install/test/${testDir}"
+        // copiaRes(exeDir)
 
         if (osAlvo == 'linux') {
             println ">> INFO: Compilando Testes [${alvo}-${arqtt}] nativamente na VM..."
@@ -810,7 +801,7 @@ Closure<Void> ctest = { Task tarefa, String alvo, String arqtt, String config ->
         if (osAlvo == 'windows') {
             if (eWindowsProv.get()) {
                 // Usa o diretório absoluto local do exeDir
-                cmds = ["cd /d \"${exeDir.absolutePath}\"", '&&', nomeExe]
+                cmds = ["cd /d \"${exeDirLocal.absolutePath}\"", '&&', nomeExe]
             } else {
                 String dirRemoto = "build/install/test/${testDir}"
                 cmds = ["cd \"${dirRemoto.replace(File.separator, '/')}\"", '&&', nomeExe]
@@ -822,7 +813,7 @@ Closure<Void> ctest = { Task tarefa, String alvo, String arqtt, String config ->
                 '/run/user/$(id -u)/.mutter-Xwaylandauth*',
                 '/run/user/$(id -u)/Xauthority',
                 '~/.Xauthority 2>/dev/null | head -n 1)', 
-                '&&', "cd \'build/install/test/${testDir}\'", '&&', "./${nomeExe}"
+                '&&', "cd \'${dirRemoto}\'", '&&', "./${nomeExe}"
             ]
         }
 
