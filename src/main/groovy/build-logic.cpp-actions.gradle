@@ -350,7 +350,7 @@ tasks.register('syncToLinux') {
     }
     
     doLast {
-        String sshLogin = "${linDonoProv.get()}@${linSedeProv.get()}"
+        String sshAcesso = "${linDonoProv.get()}@${linSedeProv.get()}"
         String base = linDirProv.get()
         Directory projDir = projDirProv.get()
         
@@ -358,7 +358,7 @@ tasks.register('syncToLinux') {
         Process processoSCP = (['scp', '-r', '-p', 
             projDir.dir('src').asFile.absolutePath.replace(File.separator, '/'), 
             espolioDirProv.get().asFile.absolutePath.replace(File.separator, '/'), 
-            "${sshLogin}:${base}/"
+            "${sshAcesso}:${base}/"
         ]).execute(null, projDir.asFile)
         processoSCP.waitForProcessOutput(System.out, System.err)
         if (processoSCP.exitValue() != 0) throw new GradleException('Falha no upload dos fontes!')
@@ -366,7 +366,7 @@ tasks.register('syncToLinux') {
         println '>> INFO: [Linux] Enviando header gerado...'
         Process scpGen = (['scp', '-r', '-p', 
             genDirProv.get().asFile.absolutePath.replace(File.separator, '/'), 
-            "${sshLogin}:${base}/build/tmp/"
+            "${sshAcesso}:${base}/build/tmp/"
         ]).execute(null, projDir.asFile)
         scpGen.waitForProcessOutput(System.out, System.err)
         if (scpGen.exitValue() != 0) throw new GradleException('Falha no upload do espolio.hpp!')
@@ -376,7 +376,7 @@ tasks.register('syncToLinux') {
         if (iconePNG.exists()) {
             Process scpIco = (['scp', '-p', 
                 iconePNG.absolutePath.replace(File.separator, '/'), 
-                "${sshLogin}:${base}/build/icons/"
+                "${sshAcesso}:${base}/build/icons/"
             ]).execute(null, projDir.asFile)
             scpIco.waitForProcessOutput(System.out, System.err)
         }
@@ -403,7 +403,7 @@ tasks.register('syncToWindows') {
     }
     
     doLast {
-        String sshLogin = "${winDonoProv.get()}@${winSedeProv.get()}"
+        String sshAcesso = "${winDonoProv.get()}@${winSedeProv.get()}"
         String base = winDirProv.get()
         Directory projDir = projDirProv.get()
         
@@ -411,7 +411,7 @@ tasks.register('syncToWindows') {
         Process processoSCP = (['scp', '-r', '-p', 
             projDir.dir('src').asFile.absolutePath.replace(File.separator, '/'), 
             espolioDirProv.get().asFile.absolutePath.replace(File.separator, '/'), 
-            "${sshLogin}:${base}/"
+            "${sshAcesso}:${base}/"
         ]).execute(null, projDir.asFile)
         processoSCP.waitForProcessOutput(System.out, System.err)
         if (processoSCP.exitValue() != 0) throw new GradleException('Falha no upload dos fontes!')
@@ -419,7 +419,7 @@ tasks.register('syncToWindows') {
         println '>> INFO: [Windows] Enviando header gerado...'
         Process scpGen = (['scp', '-r', '-p', 
             genDirProv.get().asFile.absolutePath.replace(File.separator, '/'), 
-            "${sshLogin}:${base}/build/tmp/"
+            "${sshAcesso}:${base}/build/tmp/"
         ]).execute(null, projDir.asFile)
         scpGen.waitForProcessOutput(System.out, System.err)
         if (scpGen.exitValue() != 0) throw new GradleException('Falha no upload do espolio.hpp!')
@@ -431,7 +431,7 @@ tasks.register('syncToWindows') {
             Process scpIco = (['scp', '-p', 
                 obj32Arq.absolutePath.replace(File.separator, '/'), 
                 obj64Arq.absolutePath.replace(File.separator, '/'), 
-                "${sshLogin}:${base}/build/icons/"
+                "${sshAcesso}:${base}/build/icons/"
             ]).execute(null, projDir.asFile)
             scpIco.waitForProcessOutput(System.out, System.err)
         }
