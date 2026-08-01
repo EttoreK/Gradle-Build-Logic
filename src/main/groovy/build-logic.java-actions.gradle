@@ -125,6 +125,7 @@ tasks.register('minWebJar', proguard.gradle.ProGuardTask) {
 // Compilação do aplicativo
 tasks.register('buildWeb') {
     group = 'WebActions'
+    description = 'Compila para criar um, ou vários, .jar'
     mustRunAfter(jarMagroProv.map { boolean eThin -> 
         eThin ? tasks.named('orderJar') : tasks.named('bootJar') 
     })
