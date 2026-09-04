@@ -288,6 +288,7 @@ Closure<List<String>> pegaFlagsLink = { String alvo, String arqtt, String config
             '-liphlpapi', // resolve o erro `if_nametoindex`
             '-lbcrypt', // geralmente exigido pelo OpenSSL no Windows
             '-lsecur32', // resolve o erro InitSecurityInterfaceA
+            '-lavif',
             '-Wl,--end-group'
         ])
         
@@ -522,7 +523,9 @@ tasks.register('instalaDeps') {
             'mingw-w64-ucrt-x86_64-libssh2',
             'mingw-w64-i686-libssh2',
             'mingw-w64-ucrt-x86_64-libpsl',
-            'mingw-w64-i686-libpsl'
+            'mingw-w64-i686-libpsl',
+            'mingw-w64-ucrt-x86_64-libavif',
+            'mingw-w64-i686-libavif'
         ]
         try {
             Process processoWin = comandoRemoto('windows', [
@@ -554,7 +557,9 @@ tasks.register('instalaDeps') {
             'imagemagick',
             'librsvg2-bin',
             'libcurl4-openssl-dev',
-            'libcurl4-openssl-dev:i386'
+            'libcurl4-openssl-dev:i386',
+            'libavif-dev',
+            'libavif-dev:i386'
         ]
         try {
             Process processoLin = comandoRemoto('linux', [ // Adiciona a arquitetura i386
