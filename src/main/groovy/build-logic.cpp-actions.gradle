@@ -136,6 +136,18 @@ Closure<Void> embuteRes = {
         }
     }
 
+    File pngInjetavel = new File(genDirProv.get().asFile, "favicon.png")
+    if (pngInjetavel.exists()) {
+        byte[] bytes = pngInjetavel.readBytes()
+        String nomeVar = "temp_app_icone_png"
+        
+        hpp.append("    const unsigned char ${nomeVar}[] = {")
+        hpp.append(bytes.collect { String.format('0x%02x', it) }.join(', '))
+        hpp.append('};\n')
+
+        arqvs.add("\t\t{\"favicon.png\", std::vector<uint8_t>(${nomeVar}, ${nomeVar} + sizeof(${nomeVar}))}")
+    }
+
     hpp.append('\n\tinline std::vector<uint8_t> Obter(const std::string& caminho) {\n')
     hpp.append('\t\tstatic std::map<std::string, std::vector<uint8_t>> arquivos = {\n')
     hpp.append(arqvs.join(',\n'))
@@ -486,6 +498,25 @@ tasks.register('criaEspolio') {
         return new File(dir.asFile, "${nome}.hpp") 
     })
     outputs.file(genDirProv.map { it.file("seguranca.hpp") })
+
+    doFirst {
+        // Cria um PNG 64x64px do ícone na pasta temp antes de gerar o header
+        File fundoSVG = new File(espolioDirProv.get().asFile, 'icones/appBackground.svg')
+        File frenteSVG = new File(espolioDirProv.get().asFile, 'icones/appForeground.svg')
+        File genDir = genDirProv.get().asFile
+        if (!genDir.exists()) genDir.mkdirs()
+        File pngInjetavel = new File(genDir, "favicon.png")
+        
+        if (fundoSVG.exists() && frenteSVG.exists()) {
+            String msysDir = "${winDiscProv.get()}:/msys64/ucrt64/bin/magick.exe"
+            String magickCmd = eWindowsProv.get() ? msysDir : 'magick'
+            List<String> mesclaCmd = [
+                magickCmd, '-background', 'none', fundoSVG.absolutePath, frenteSVG.absolutePath, 
+                '-gravity', 'center', '-composite', '-resize', '64x64', pngInjetavel.absolutePath
+            ]
+            mesclaCmd.execute().waitFor()
+        }
+    }
     
     doLast { 
         embuteRes() 
@@ -900,26 +931,8 @@ Closure<Void> criaIcoWin = { File fundoSVG, File frenteSVG, File icoArq, File rc
     Process prcessoMesclar = mesclaSVG.execute()
     prcessoMesclar.waitForProcessOutput(System.out, System.err)
     if (prcessoMesclar.exitValue() != 0) { throw new GradleException('Falha ao mesclar') }
-    // Cria uma versão PNG minúscula para ser injetada no C++
-    File espolioVisualDir = new File(espolioDirProv.get().asFile, 'visual')
-    if (!espolioVisualDir.exists()) espolioVisualDir.mkdirs()
-    File pngInjetavel = new File(espolioVisualDir, 'app_icone.png')
-    
-    List<String> mesclaSVGPNG = [
-        magickCmd,
-        '-background', 'none',
-        fundoSVG.absolutePath, 
-        frenteSVG.absolutePath, 
-        '-gravity', 'center', 
-        '-composite', 
-        '-resize', '64x64', // pequeno para carregar sem custo, bom para a barra
-        pngInjetavel.absolutePath 
-    ]
-    Process pPNG = mesclaSVGPNG.execute()
-    pPNG.waitForProcessOutput(System.out, System.err)
-    if (pPNG.exitValue() != 0) { throw new GradleException('Falha ao gerar PNG injetável') }
     // processo RC normal do Windows
-    rcArq.text = "id ICON \"${icoArq.absolutePath.replace(File.separator, '/')}\""
+    rcArq.text = "1 ICON \"${icoArq.absolutePath.replace(File.separator, '/')}\""
 
     Closure<Void> rodaWindres = { String cmd, File objArq, String extraDir ->
         ProcessBuilder pb = new ProcessBuilder(cmd, rcArq.absolutePath, '-o', objArq.absolutePath)
@@ -1014,6 +1027,7 @@ tasks.register('linIco') {
         }
     }
 }
+
 Closure<List> pegeDefinicoes = { String name -> return [
     name.contains('Release') ? 'Release' : 'Debug',
     name.contains('Windows') || name.contains('windows') ? 'Windows' : 'Linux',
