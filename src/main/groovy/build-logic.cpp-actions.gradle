@@ -11,7 +11,7 @@ Provider<Map<String, String>> progPropsProv = providers.of(LeitorProps) {
     parameters.propertiesFile.set(new File(raizArq, nomeArq))
 }
 Provider<Map<String, String>> secretoPropsProv = providers.of(LeitorProps) { 
-    String nomeArq = providers.gradleProperty('scrtPropertiesNome').getOrElse('programa.properties')
+    String nomeArq = providers.gradleProperty('scrtPropertiesNome').getOrElse('secreto.properties')
     parameters.propertiesFile.set(new File(raizArq, nomeArq))
 }
 // Definição de provedores para acesso à valores de configuração e diretórios
@@ -497,7 +497,7 @@ tasks.register('criaEspolio') {
     outputs.file(genDirProv.zip(espNomeProv) { Directory dir, String nome -> 
         return new File(dir.asFile, "${nome}.hpp") 
     })
-    outputs.file(genDirProv.map { it.file("seguranca.hpp") })
+    outputs.file(genDirProv.map { it.file("propriedades.hpp") })
 
     doFirst {
         // Cria um PNG 64x64px do ícone na pasta temp antes de gerar o header
@@ -522,9 +522,12 @@ tasks.register('criaEspolio') {
         embuteRes() 
 
         String chave = secretoPropsProv.get().getOrDefault('APP_CHAVE_CONF', 'CHAVE_FALTANDO')
-        File segHpp = new File(genDirProv.get().asFile, 'seguranca.hpp')
-        segHpp.parentFile.mkdirs()
-        segHpp.text = "#pragma once\n#define APP_CHAVE_CONF \"${chave}\"\n"
+        String appVer = progPropsProv.get().getProperty('appVerNome', 'appVerNome não encontrado')
+        File propHpp = new File(genDirProv.get().asFile, 'propriedades.hpp')
+        propHpp.parentFile.mkdirs()
+        propHpp.text = "#pragma once\n"
+        propHpp << "#define APP_CHAVE_CONF \"${chave}\"\n"
+        propHpp << "#define APP_VER_NOME \"${appVer}\"\n"
     }
 }
 // Verifica e instala dependências automaticamente
