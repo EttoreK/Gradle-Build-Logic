@@ -935,7 +935,7 @@ Closure<Void> criaIcoWin = { File fundoSVG, File frenteSVG, File icoArq, File rc
     prcessoMesclar.waitForProcessOutput(System.out, System.err)
     if (prcessoMesclar.exitValue() != 0) { throw new GradleException('Falha ao mesclar') }
     // processo RC normal do Windows
-    rcArq.text = "1 ICON \"${icoArq.absolutePath.replace(File.separator, '/')}\""
+    rcArq.text = "id ICON \"${icoArq.absolutePath.replace(File.separator, '/')}\""
 
     Closure<Void> rodaWindres = { String cmd, File objArq, String extraDir ->
         ProcessBuilder pb = new ProcessBuilder(cmd, rcArq.absolutePath, '-o', objArq.absolutePath)
