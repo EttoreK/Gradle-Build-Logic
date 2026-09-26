@@ -301,7 +301,8 @@ Closure<List<String>> pegaFlagsLink = { String alvo, String arqtt, String config
             '-liphlpapi', // resolve o erro `if_nametoindex`
             '-lbcrypt', // geralmente exigido pelo OpenSSL no Windows
             '-lsecur32', // resolve o erro InitSecurityInterfaceA
-            '-lavif',
+            '-lavif', // compreende o formato avif
+            '-municode', // instrui a procurar por wWinMain
             '-Wl,--end-group'
         ])
         
