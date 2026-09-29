@@ -675,6 +675,17 @@ Closure<Void> cbuild = { Task tarefa, String alvo, String arqtt, String config -
                 }
             }
         }
+
+        File bibDir = new File(projDir.asFile, 'src/main/bib/cpp')
+        if (bibDir.exists()) {
+            bibDir.eachFileRecurse(groovy.io.FileType.FILES) { File arq ->
+                if (arq.name.endsWith('.cpp')) {
+                    gppFlags.add(projDir.asFile.toPath().relativize(
+                        arq.toPath()).toString().replace(File.separator, '/')
+                    )
+                }
+            }
+        }
         // Insere do ícone do Windows
         if (osAlvo == 'windows') {
             if (eWindowsProv.get()) { 
@@ -850,6 +861,7 @@ Closure<Void> ctest = { Task tarefa, String alvo, String arqtt, String config ->
 
             gppTestcmds.addAll(
                 "\$(find src/main/cpp -name \'*.cpp\' ! -name \'app.cpp\')",
+                "\$(find src/main/bib/cpp -name \'*.cpp\' 2>/dev/null || true)",
                 "\$(find src/test/cpp -name \'*.cpp\')",
                 '-o', "\'${dirRemoto}/${nomeExe}\'"
             )
