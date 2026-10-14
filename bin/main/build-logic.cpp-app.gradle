@@ -19,6 +19,19 @@ application {
         machines.linux.x86, machines.linux.x86_64, // linux
         machines.windows.x86, machines.windows.x86_64 // windows
     ]
+    // Configura os diretórios de código-fonte e cabeçalhos para o build local
+    source.from fileTree(dir: 'src/main/cpp', include: '**/*.cpp')
+    source.from fileTree(dir: 'src/main/bib/cpp', include: '**/*.cpp')
+    
+    privateHeaders.from fileTree(dir: 'src/main/headers', include: '**/*.h')
+    
+    File bibBase = file('src/main/bib')
+    if (bibBase.exists()) {
+        privateHeaders.from(bibBase) // Adiciona a raiz do bib
+        bibBase.eachDirRecurse { subPasta ->
+            privateHeaders.from(subPasta) // Adiciona cada subpasta encontrada dinamicamente
+        }
+    }
 }
 // Configuração dos Testes
 unitTest {
