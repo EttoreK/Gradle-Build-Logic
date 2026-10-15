@@ -214,6 +214,7 @@ Closure<List<String>> pegaFlagsComp = { String alvo, String arqtt, String config
     List<String> flags = ['-std=c++26', '-Os']
     
     if (alvo.toLowerCase() == 'linux') { flags << '-I/usr/include/jsoncpp' }
+    if (alvo.toLowerCase() == 'windows') { flags.addAll(['-DUNICODE', '-D_UNICODE']) }
     flags << (arqtt == 'X86' ? '-m32' : '-m64')
     // Diferencia Caminhos Locais Absolutos dos Caminhos SSH Relativos
     if (eRemoto) {

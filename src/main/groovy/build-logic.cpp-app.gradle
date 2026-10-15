@@ -23,7 +23,7 @@ application {
     source.from fileTree(dir: 'src/main/cpp', include: '**/*.cpp')
     source.from fileTree(dir: 'src/main/bib/cpp', include: '**/*.cpp')
     
-    privateHeaders.from fileTree(dir: 'src/main/headers', include: '**/*.h')
+    privateHeaders.from 'src/main/headers'
     
     File bibBase = file('src/main/bib')
     if (bibBase.exists()) {
