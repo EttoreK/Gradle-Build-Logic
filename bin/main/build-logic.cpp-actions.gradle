@@ -253,8 +253,13 @@ Closure<List<String>> pegaFlagsLink = { String alvo, String arqtt, String config
 
     if (alvo.toLowerCase() == 'windows') {
         flags.addAll([
+            '-static',
+            '-static-libgcc', 
+            '-static-libstdc++',
             // Força o uso de arquivos estáticos
             '-Wl,-Bstatic',
+            '-lwinpthread', // Mata o erro do clock_gettime32
+
             '-Wl,--start-group', 
             // A Biblioteca Principal
             '-lcurl',
@@ -309,17 +314,23 @@ Closure<List<String>> pegaFlagsLink = { String alvo, String arqtt, String config
         
         if (eTeste) { flags.addAll(['-lgtest', '-lgtest_main', '-lpthread']) }
          
-        flags.addAll(['-static-libgcc', '-static-libstdc++'])
+        flags.addAll([
+            '-Wl,-Bstatic',
+            '-lstdc++',
+            '-lwinpthread',
+            '-Wl,-Bdynamic',
+            '-static-libgcc', 
+            '-static-libstdc++'
+        ])
         // Esconde o console se for Release e não for Teste
         if (config == 'Release' && !eTeste) { flags << '-mwindows' }
-    } 
-    else if (alvo.toLowerCase() == 'linux') {
+    } else if (alvo.toLowerCase() == 'linux') {
         if (arqtt == 'X86') {
             flags.addAll([
                 '-m32', 
                 '-Wl,-m,elf_i386', 
-                '-L/usr/lib/i386-linux-gnu', 
-                '/usr/lib/i386-linux-gnu/libjsoncpp.a'
+                '-L/usr/lib/i386-linux-gnu'
+                // '/usr/lib/i386-linux-gnu/libjsoncpp.a'
             ])
         } else {
             flags.addAll([
@@ -329,20 +340,23 @@ Closure<List<String>> pegaFlagsLink = { String alvo, String arqtt, String config
                 '-L/usr/lib/x86_64-linux-gnu'
             ])
         }
-        flags.addAll(['-Wl,-Bstatic', '-ljsoncpp'])
+        // flags.addAll(['-Wl,-Bstatic', '-ljsoncpp'])
         
         if (eTeste) flags.addAll(['-lgtest', '-lgtest_main'])
         
         flags.addAll([
-            '-Wl,-Bdynamic', 
+            // '-Wl,-Bdynamic', 
             '-lwayland-client', 
             '-lfontconfig', 
             '-lcurl',
+            '-lavif',
             '-pthread', 
-            '-static-libgcc', 
+            '-ljsoncpp',
+            '-static-libgcc',
             '-static-libstdc++'
         ])
     }
+    
     return flags
 }
 // Envia os arquivos para a máquina virtual Linux
@@ -516,7 +530,15 @@ tasks.register('criaEspolio') {
                 magickCmd, '-background', 'none', fundoSVG.absolutePath, frenteSVG.absolutePath, 
                 '-gravity', 'center', '-composite', '-resize', '64x64', pngInjetavel.absolutePath
             ]
-            mesclaCmd.execute().waitFor()
+
+            ProcessBuilder pbFavicon = new ProcessBuilder(mesclaCmd)
+            if (eWindowsProv.get()) {
+                pbFavicon.environment().put('PATH', "${winDiscProv.get()}:/msys64/ucrt64/bin" + 
+                    File.pathSeparator + pbFavicon.environment().get('PATH')
+                )
+            }
+            
+            pbFavicon.start().waitFor()
         }
     }
     
@@ -548,7 +570,7 @@ tasks.register('instalaDeps') {
             'mingw-w64-ucrt-x86_64-imagemagick',
             'mingw-w64-ucrt-x86_64-librsvg',
             'mingw-w64-ucrt-x86_64-gtest',
-            'mingw-w64-i686-gtest',
+            // 'mingw-w64-i686-gtest',
             'mingw-w64-ucrt-x86_64-curl',
             'mingw-w64-i686-curl',
             'mingw-w64-ucrt-x86_64-ngtcp2',
@@ -562,12 +584,12 @@ tasks.register('instalaDeps') {
             'mingw-w64-ucrt-x86_64-libpsl',
             'mingw-w64-i686-libpsl',
             'mingw-w64-ucrt-x86_64-libavif',
-            'mingw-w64-i686-libavif'
+            // 'mingw-w64-i686-libavif'
         ]
         try {
             Process processoWin = comandoRemoto('windows', [
                 "${winDiscProv.get()}:/msys64/usr/bin/bash.exe -l -c",
-                "\"pacman -S --needed --noconfirm ${winDeps.join(' ')}\""
+                "\"pacman -Syu --noconfirm ${winDeps.join(' ')}\""
             ]).execute()
             processoWin.waitForProcessOutput(System.out, System.err) 
             
@@ -596,7 +618,8 @@ tasks.register('instalaDeps') {
             'libcurl4-openssl-dev',
             'libcurl4-openssl-dev:i386',
             'libavif-dev',
-            'libavif-dev:i386'
+            'libavif-dev:i386',
+            'fonts-dejavu-core'
         ]
         try {
             Process processoLin = comandoRemoto('linux', [ // Adiciona a arquitetura i386
@@ -790,19 +813,32 @@ Closure<Void> crun = { Task tarefa, String alvo, String arqtt, String config ->
             if (osAlvo == 'windows') { 
                 cmds = ["cd \"${appDirRemoto.replace('/', '\\')}\"", '&&', 'start', '\"\"', nomeExe] 
             } else { 
-                cmds = [
-                    'export XDG_RUNTIME_DIR=/run/user/$(id -u)', '&&', 
-                    'export WAYLAND_DISPLAY=wayland-0', '&&', 'export DISPLAY=:0', '&&', 
-                    "cd \'${appDirRemoto}\'", '&&', 
-                    "setsid sh -c \'exec ./${nomeExe} > /dev/null 2>&1 < /dev/null &\'",
-                    "> /dev/null 2>&1"
-                ] 
+                if (config == 'Debug') {
+                    // No Debug, executa em primeiro plano e exibe os erros no console do Gradle
+                    cmds = [
+                        'export XDG_RUNTIME_DIR=/run/user/$(id -u)', '&&', 
+                        'export WAYLAND_DISPLAY=$(ls /run/user/$(id -u)/wayland-* 2>/dev/null | head -n 1 | xargs basename 2>/dev/null || echo wayland-0)', '&&',
+                        'export DISPLAY=:0', '&&', 
+                        "cd '${appDirRemoto}'", '&&', 
+                        "./${nomeExe}"
+                    ]
+                } else {
+                    cmds = [
+                        'export XDG_RUNTIME_DIR=/run/user/$(id -u)', '&&', 
+                        'export WAYLAND_DISPLAY=wayland-0', '&&', 'export DISPLAY=:0', '&&', 
+                        "cd '${appDirRemoto}'", '&&', 
+                        "setsid sh -c 'exec ./${nomeExe} > /dev/null 2>&1 < /dev/null &'",
+                        "> /dev/null 2>&1"
+                    ]
+                }
             }
         }
         // Ícone do desktop só faz sentido se estiver rodando localmente no Linux
-        if (osAlvo == 'linux' && eLinuxProv.get()) {desktop(
-            appNome, new File(instllDirProv.get().asFile, "${appDir}/${nomeExe}").absolutePath
-        )}
+        if (osAlvo == 'linux' && eLinuxProv.get()) { 
+            desktop(
+                appNome, new File(instllDirProv.get().asFile, "${appDir}/${nomeExe}").absolutePath
+            )
+        }
 
         println ">> INFO: Executando ${alvo}..."
         String dirDireto = null
@@ -810,7 +846,11 @@ Closure<Void> crun = { Task tarefa, String alvo, String arqtt, String config ->
             dirDireto = "${winDiscProv.get()}:/msys64/${arqtt == 'X86' ? 'mingw32' : 'ucrt64'}/bin"
         }
         Process precessoExecutar = comandoRemoto(osAlvo, cmds, dirDireto).execute()
-        precessoExecutar.waitFor() // tem que ser waitFor() e não waitForProcessOutput()
+        if (osAlvo == 'linux' && config == 'Debug') {
+            precessoExecutar.waitForProcessOutput(System.out, System.err)
+        } else {
+            precessoExecutar.waitFor() // tem que ser waitFor() e não waitForProcessOutput()
+        }
         if (precessoExecutar.exitValue() != 0) { throw new GradleException('A execução falhou.') }
     }
 }
@@ -938,16 +978,29 @@ Closure<Void> criaIcoWin = { File fundoSVG, File frenteSVG, File icoArq, File rc
     List<String> mesclaSVG = [
         magickCmd,
         '-background', 'none',
-        fundoSVG.absolutePath, // carrega a imagem de trás
-        frenteSVG.absolutePath, // carrega a imagem da frente
+        fundoSVG.absolutePath.replace('\\', '/'), // carrega a imagem de trás
+        frenteSVG.absolutePath.replace('\\', '/'), // carrega a imagem da frente
         '-gravity', 'center', // centraliza o alinhamento
         '-composite', // mescla as duas imagens
         '-define', 'icon:auto-resize=256,128,64,48,32,16', 
-        icoArq.absolutePath // salva o resultado
+        icoArq.absolutePath.replace('\\', '/'), // salva o resultado
     ]
-    Process prcessoMesclar = mesclaSVG.execute()
-    prcessoMesclar.waitForProcessOutput(System.out, System.err)
-    if (prcessoMesclar.exitValue() != 0) { throw new GradleException('Falha ao mesclar') }
+
+    // Configura o ProcessBuilder para o ImageMagick
+    ProcessBuilder pbMagick = new ProcessBuilder(mesclaSVG)
+    if (eWindowsProv.get()) {
+        // Injeta a pasta ucrt64/bin no PATH para o magick.exe encontrar as DLLs de SVG e do MSYS2
+        pbMagick.environment().put('PATH', "${msysDir}:/msys64/ucrt64/bin" + 
+            File.pathSeparator + pbMagick.environment().get('PATH')
+        )
+    }
+
+    StringBuilder erroM = new StringBuilder()
+    Process prcessoMesclar = pbMagick.start()
+    prcessoMesclar.waitForProcessOutput(System.out, erroM)
+    if (prcessoMesclar.exitValue() != 0) { 
+        throw new GradleException("Falha ao mesclar o ícone do Windows: ${erroM.toString().trim()}") 
+    }
     // processo RC normal do Windows
     rcArq.text = "id ICON \"${icoArq.absolutePath.replace(File.separator, '/')}\""
 
@@ -961,10 +1014,13 @@ Closure<Void> criaIcoWin = { File fundoSVG, File frenteSVG, File icoArq, File rc
             )
         }
         
+        StringBuilder erro = new StringBuilder()
         Process processo = pb.start()
-        processo.waitForProcessOutput(System.out, System.err)
+        processo.waitForProcessOutput(System.out, erro)
         if (processo.exitValue() != 0) {
-            throw new GradleException("Falha no windres para ${objArq.name}")
+            throw new GradleException(
+                "Falha no windres para ${objArq.name}:\n${erro.toString().trim()}"
+            )
         }
     }
     // Injeção isolada para 32 e 64 bits
@@ -1035,12 +1091,19 @@ tasks.register('linIco') {
             '-resize', '2048x2048', 
             pngArq.absolutePath 
         ]
+
+        ProcessBuilder pbLinMagick = new ProcessBuilder(mesclaSVG)
+        if (eWindowsProv.get()) {
+            pbLinMagick.environment().put('PATH', "${winDiscProv.get()}:/msys64/ucrt64/bin" + 
+                File.pathSeparator + pbLinMagick.environment().get('PATH')
+            )
+        }
         
-        StringBuilder err = new StringBuilder()
-        Process processo = mesclaSVG.execute()
-        processo.waitForProcessOutput(System.out, err)
+        StringBuilder erroM = new StringBuilder()
+        Process processo = pbLinMagick.start()
+        processo.waitForProcessOutput(System.out, erroM)
         if (processo.exitValue() != 0) {
-            throw new GradleException("Falha ao gerar o ícone do Linux: ${err.toString().trim()}")
+            throw new GradleException("Falha ao gerar o ícone do Linux: ${erroM.toString().trim()}")
         }
     }
 }
