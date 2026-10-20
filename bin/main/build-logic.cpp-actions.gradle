@@ -345,8 +345,9 @@ Closure<List<String>> pegaFlagsLink = { String alvo, String arqtt, String config
         if (eTeste) flags.addAll(['-lgtest', '-lgtest_main'])
         
         flags.addAll([
-            // '-Wl,-Bdynamic', 
-            '-lwayland-client', 
+            '-Wl,-Bdynamic', 
+            '-lwayland-client',
+            '-lxkbcommon',
             '-lfontconfig', 
             '-lcurl',
             '-lavif',
@@ -604,22 +605,18 @@ tasks.register('instalaDeps') {
             'cmake',
             'g++-multilib',
             'libc6-dev-i386',
-            'libwayland-dev',
-            'libwayland-dev:i386', 
+            'libwayland-dev', 'libwayland-dev:i386', 
             'libwayland-bin',
             'wayland-protocols',
-            'libfontconfig1-dev',
-            'libfontconfig1-dev:i386',
+            'libfontconfig1-dev', 'libfontconfig1-dev:i386',
             'libgtest-dev',
-            'libjsoncpp-dev',
-            'libjsoncpp-dev:i386',
+            'libjsoncpp-dev', 'libjsoncpp-dev:i386',
             'imagemagick',
             'librsvg2-bin',
-            'libcurl4-openssl-dev',
-            'libcurl4-openssl-dev:i386',
-            'libavif-dev',
-            'libavif-dev:i386',
-            'fonts-dejavu-core'
+            'libcurl4-openssl-dev', 'libcurl4-openssl-dev:i386',
+            'libavif-dev', 'libavif-dev:i386',
+            'fonts-dejavu-core',
+            'libxkbcommon-dev', 'libxkbcommon-dev:i386'
         ]
         try {
             Process processoLin = comandoRemoto('linux', [ // Adiciona a arquitetura i386
