@@ -322,6 +322,20 @@ Closure<List<String>> pegaFlagsLink = { String alvo, String arqtt, String config
             '-static-libgcc', 
             '-static-libstdc++'
         ])
+        // Insere do ícone do Windows
+        if (!eTeste) {
+            if (eWindowsProv.get()) {
+                File icoObj = new File(
+                    buildDirProv.get().asFile, (arqtt == 'X86' ? 'icone32.o' : 'icone64.o')
+                )
+
+                if (icoObj.exists()) {
+                    flags << icoObj.absolutePath.replace(File.separator, '/')
+                }
+            } else {
+                flags << (arqtt == 'X86' ? 'build/icons/icone32.o' : 'build/icons/icone64.o')
+            }
+        }
         // Esconde o console se for Release e não for Teste
         if (config == 'Release' && !eTeste) { flags << '-mwindows' }
     } else if (alvo.toLowerCase() == 'linux') {
@@ -705,16 +719,6 @@ Closure<Void> cbuild = { Task tarefa, String alvo, String arqtt, String config -
                         arq.toPath()).toString().replace(File.separator, '/')
                     )
                 }
-            }
-        }
-        // Insere do ícone do Windows
-        if (osAlvo == 'windows') {
-            if (eWindowsProv.get()) { 
-                gppFlags.add((new File(
-                    buildDirProv.get().asFile, (arqtt == 'X86' ? 'icone32.o' : 'icone64.o')
-                )).absolutePath.replace(File.separator, '/'))
-            } else { 
-                gppFlags << (arqtt == 'X86' ? 'build/icons/icone32.o' : 'build/icons/icone64.o')
             }
         }
 
@@ -1125,6 +1129,15 @@ tasks.withType(LinkExecutable).configureEach {
     String config, alvo, arqtt
     boolean eTest 
     (config, alvo, arqtt, eTest) = pegeDefinicoes(name)
+
+    if (alvo == 'Windows' && !eTest) {
+        mustRunAfter tasks.named('winIco')
+        inputs.files(tasks.named('winIco'))
+    } else {
+        mustRunAfter tasks.named('linIco')
+        inputs.files(tasks.named('linIco'))
+    }
+
     linkerArgs.addAll(project.providers.provider { pegaFlagsLink(alvo, arqtt, config, eTest) })
 }
 // Biblioteras para serem usadas no código
