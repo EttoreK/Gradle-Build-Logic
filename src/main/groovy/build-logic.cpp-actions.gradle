@@ -57,10 +57,9 @@ Closure<List<String>> comandoRemoto = { String os, List<String> entradaCmds, Str
     } else {
         String dirLocal = projDirProv.get().asFile.absolutePath
         if (eWindowsProv.get()) {
-            // Se foi passado um caminho extra, injeta ele no início do PATH do Windows
             if (extDir != null) {
                 return [
-                    'cmd', '/c', "set \"PATH=${extDir};%PATH%\" &&" +
+                    'cmd', '/c', "set \"PATH=${extDir.replace('/', '\\')};%PATH%\" &&" +
                     "cd /d \"${dirLocal}\" && ${entradaCmds.join(' ')}"
                 ]
             } else {
@@ -354,13 +353,13 @@ Closure<List<String>> pegaFlagsLink = { String alvo, String arqtt, String config
                 '-L/usr/lib/x86_64-linux-gnu'
             ])
         }
-        // flags.addAll(['-Wl,-Bstatic', '-ljsoncpp'])
         
         if (eTeste) flags.addAll(['-lgtest', '-lgtest_main'])
         
         flags.addAll([
             '-Wl,-Bdynamic', 
             '-lwayland-client',
+            '-lwayland-cursor',
             '-lxkbcommon',
             '-lfontconfig', 
             '-lcurl',
@@ -785,7 +784,6 @@ tasks.register('buildLin32Release') { cbuild(it, 'Linux', 'X86', 'Release') }
 // Closure centralização de execução
 Closure<Void> crun = { Task tarefa, String alvo, String arqtt, String config ->
     String appDir = "main/${config}/${alvo}/${arqtt}/lib".toLowerCase()
-    String tarefaNativaNome = "install${config}${alvo}${arqtt}"
     String buildNome = "build${alvo == 'Windows' ? 'Win' : 'Lin'}${arqtt == 'X86' ? '32' : '64'}"
     String tarefaBuildNome = "${buildNome}${config == 'Release' ? 'Release' : ''}"
 
@@ -794,10 +792,6 @@ Closure<Void> crun = { Task tarefa, String alvo, String arqtt, String config ->
     tarefa.mustRunAfter(tasks.named(tarefaBuildNome))
     tarefa.inputs.files(tasks.named(tarefaBuildNome))
     tarefa.inputs.files(pegaArquivos(appDir))
-    if (tasks.findByName(tarefaNativaNome)) {
-        tarefa.inputs.files(tasks.named(tarefaNativaNome))
-        tarefa.mustRunAfter tasks.named(tarefaNativaNome)
-    }
     tarefa.outputs.upToDateWhen { false } // sempre executa
 
     tarefa.doFirst {
@@ -846,13 +840,13 @@ Closure<Void> crun = { Task tarefa, String alvo, String arqtt, String config ->
         if (eWindowsProv.get() && osAlvo == 'windows') {
             dirDireto = "${winDiscProv.get()}:/msys64/${arqtt == 'X86' ? 'mingw32' : 'ucrt64'}/bin"
         }
-        Process precessoExecutar = comandoRemoto(osAlvo, cmds, dirDireto).execute()
+        Process processoExecutar = comandoRemoto(osAlvo, cmds, dirDireto).execute()
         if (osAlvo == 'linux' && config == 'Debug') {
-            precessoExecutar.waitForProcessOutput(System.out, System.err)
+            processoExecutar.waitForProcessOutput(System.out, System.err)
         } else {
-            precessoExecutar.waitFor() // tem que ser waitFor() e não waitForProcessOutput()
+            processoExecutar.waitFor() // tem que ser waitFor() e não waitForProcessOutput()
         }
-        if (precessoExecutar.exitValue() != 0) { throw new GradleException('A execução falhou.') }
+        if (processoExecutar.exitValue() != 0) { throw new GradleException('A execução falhou.') }
     }
 }
 // Tarefas de execução
