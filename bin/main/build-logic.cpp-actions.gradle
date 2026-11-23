@@ -210,7 +210,7 @@ Closure<Void> desktop = { String appNome, String caminhoExe ->
 // Coleta as flags de compilação
 Closure<List<String>> pegaFlagsComp = { String alvo, String arqtt, String config, Boolean eRemoto ->
     Directory projDir = projDirProv.get()
-    List<String> flags = ['-std=c++26', '-Os']
+    List<String> flags = ['-std=c++26', '-Os', '-Wdeprecated']
     
     if (alvo.toLowerCase() == 'linux') { flags << '-I/usr/include/jsoncpp' }
     if (alvo.toLowerCase() == 'windows') { flags.addAll(['-DUNICODE', '-D_UNICODE']) }
