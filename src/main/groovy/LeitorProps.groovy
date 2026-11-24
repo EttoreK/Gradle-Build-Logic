@@ -15,7 +15,7 @@ abstract class LeitorProps implements ValueSource<Map<String, String>, Params> {
         File fileObj = parameters.propertiesFile.get().asFile
         
         if (fileObj.exists()) {
-            fileObj.withInputStream { props.load(it) }
+            fileObj.withReader('UTF-8') { props.load(it) }
         }
         // Retorna um Map limpo
         return props.collectEntries { k, v -> [(k.toString()): v.toString()] }

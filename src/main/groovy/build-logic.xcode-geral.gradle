@@ -12,11 +12,12 @@ Provider<Map<String, String>> progPropsProv = providers.of(LeitorProps) {
     parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
 }
 Provider<Map<String, String>> secretoPropsProv = providers.of(LeitorProps) { 
-    String nomeArq = providers.gradleProperty('scrtPropertiesNome').getOrElse('programa.properties')
+    String nomeArq = providers.gradleProperty('scrtPropertiesNome').getOrElse('secreto.properties')
     parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
 }
 xcConfig.projDir.convention(project.layout.projectDirectory)
-xcConfig.rootDir.fileValue(project.rootDir)
+// xcConfig.rootDir.fileValue(project.rootDir)
+xcConfig.rootDir.convention(layout.settingsDirectory)
 xcConfig.srcDir.convention(xcConfig.projDir.map { it.dir(XcConfig.MAIN_DIR) })
 xcConfig.nomeApp.convention(progPropsProv.map { it.getOrDefault('projNome', 'Modelo') })
 xcConfig.buildXDir.convention(progPropsProv.map { it.getOrDefault('buildDirXcode', 'build/xcode') })

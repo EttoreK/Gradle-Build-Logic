@@ -35,12 +35,16 @@ project.sourceSets {
             srcDirs += [project.layout.dir( progPropsProv.map { 
                 new File(project.rootDir, it.getOrDefault('espolioDir', 'espolio')) 
             })]
+            // inclui o ícone gerado
+            srcDirs += tasks.named('webIco').map { 
+                it.outputs.files.singleFile.parentFile.parentFile 
+            }
         }
     }
 }
 // Manipulação do arquivo .classpath para o VSCODE parar de reclamar
 project.tasks.register('posBuildWeb') {
-    group = 'webActions'
+    group = 'Web Actions'
     description = 'Sobrescreve o .classpath do VS Code incluindo dependências do projeto Web'
     mustRunAfter tasks.named('classes') // roda logo após a compilação do Java
     // Pega as dependências de compilação do Java

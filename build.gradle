@@ -16,6 +16,10 @@ if (propsProg.buildDirBuildLogic) {
     layout.buildDirectory.set(new File(rootDir.parentFile, propsProg.buildDirBuildLogic)
 )}
 
+tasks.named('validatePlugins') {
+    enableStricterValidation = true
+}
+
 dependencies {
     implementation libs.proguard
 }

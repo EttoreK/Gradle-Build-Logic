@@ -13,7 +13,7 @@ Provider<Map<String, String>> progPropsProv = providers.of(LeitorProps) {
     parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
 }
 Provider<Map<String, String>> secretoPropsProv = providers.of(LeitorProps) { 
-    String nomeArq = providers.gradleProperty('scrtPropertiesNome').getOrElse('programa.properties')
+    String nomeArq = providers.gradleProperty('scrtPropertiesNome').getOrElse('secreto.properties')
     parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
 }
 // Definição de provedores para acesso à valores de configuração e diretórios
@@ -231,7 +231,7 @@ Closure<Void> xbuild = { Task tarefa, String platforma, String sdk, String confi
     tarefa.inputs.dir xcConfig.srcDir.get()
     tarefa.inputs.dir xcConfig.xcodeProj.get()
     tarefa.inputs.files(tasks.named('syncToMac')) // garante sync antes do build, se remoto
-    tarefa.outputs.dir({xcConfig.eMac.get() ? pegaArquivos("${config}-${sdk}") : null}).optional()
+    tarefa.outputs.files({xcConfig.eMac.get() ? pegaArquivos("${config}-${sdk}") : null}).optional()
     // Configura o comando de build do Xcode
     tarefa.executable = pegaExecutavelBase()
     tarefa.argumentProviders.add(new CommandLineArgumentProvider() {
@@ -390,7 +390,7 @@ Closure<Void> xarchive = { Task tarefa, String platforma, String sdk ->
     tarefa.inputs.files(tasks.named('syncToMac'))
 
     Provider<RegularFile> archiveArqProv = project.layout.file(project.provider { 
-        new File(raizDir, pegaArchiveDir(platforma)) 
+        new File(xcConfig.rootDir, pegaArchiveDir(platforma)) 
     })
     Provider<String> categoriaProv = progPropsProv.map { 
         it.getOrDefault('apple.category', 'app-store-connect') 
@@ -448,18 +448,19 @@ Closure<Void> xexport = { Task tarefa, String platforma ->
     tarefa.outputs.file(xcConfig.eMac.map { Boolean eMac ->
         if (eMac) {
             String exportExt = (platforma == 'ios' ? 'ipa' : 'pkg')
-            return "${pegaDir('derived-data', platforma)}/Exported-Products/Logger.${exportExt}"
+            String nomeApp = xcConfig.nomeApp.get()
+            return "${pegaDir('derived-data', platforma)}/Exported-Products/${nomeApp}.${exportExt}"
         } else { return null }
     }).optional()
 
     tarefa.executable = pegaExecutavelBase()
     tarefa.argumentProviders.add(new CommandLineArgumentProvider() {
         @Input Provider<String> getXcodeProj() { xcConfig.xcodeProj }
-        @Input Provider<String> getProjDir() { xcConfig.projDir }
-        @Input Provider<String> getEMac() { xcConfig.eMac }
+        @Input Provider<Directory> getProjDir() { xcConfig.projDir }
+        @Input Provider<Boolean> getEMac() { xcConfig.eMac }
 
         @Override Iterable<String> asArguments() {
-            String exportDir = "${pegaDir('derived-data', platforma)}/Exported-Poducts"
+            String exportDir = "${pegaDir('derived-data', platforma)}/Exported-Products"
             String plistDir = "${getXcodeProj().get()}/exportOptions.plist"
             String localPlistDir = new File(getProjDir().get().asFile, plistDir).absolutePath
             // Comando de Exportação requer um .plist, criado em xcode-project
@@ -484,7 +485,7 @@ Closure<Void> xsubmit = { Task tarefa, String platforma ->
     tarefa.executable = pegaExecutavelBase()
     tarefa.argumentProviders.add(new CommandLineArgumentProvider() {
         @Override Iterable<String> asArguments() {
-            String exportDir = "${pegaDir('derived-data', platforma)}/Exported-Poducts"
+            String exportDir = "${pegaDir('derived-data', platforma)}/Exported-Products"
             String exportArq = (platforma == 'ios' ? 'ipa' : 'pkg')
             // Comando de Exportação requer um .plist, criado em xcode-project
             return xcConfig.comandoRemoto([

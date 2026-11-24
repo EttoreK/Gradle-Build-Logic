@@ -19,6 +19,6 @@ dependencies {
     testImplementation libs.mockitoJunit // para mockar métodos estáticos
 }
 // Aplica o tipo de teste como JUnit
-test {
-    useJUnitPlatform()
+tasks.withType(Test).configureEach { 
+    useJUnitPlatform() 
 }

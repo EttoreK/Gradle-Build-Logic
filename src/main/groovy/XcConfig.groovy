@@ -32,7 +32,7 @@ abstract class XcConfig {
     abstract Property<String> getXcIdPacoteApp()
     abstract Property<String> getXcodeProj() 
 
-    @Internal List<String> comandoRemoto(List<String> cmds) {
+    List<String> comandoRemoto(List<String> cmds) {
         // Extrai os valores das próprias propriedades nativas da Extension
         boolean eMac = geteMac().get()
         String dono = getMacDono().get()

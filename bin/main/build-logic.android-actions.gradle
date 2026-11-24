@@ -231,7 +231,7 @@ tasks.register('runAndroid') {
             'sh', '-c', "${parametros} 2>&1 | grep -vE '${saidaFiltro.join('|')}' &"
         ].execute() }
         
-        ByteArrayOutputStream saidaStd
+        ByteArrayOutputStream saidaStd = new ByteArrayOutputStream()
         Process processoEspera = ['adb', 'wait-for-device'].execute()
         processoEspera.waitForProcessOutput(saidaStd, System.err)
 

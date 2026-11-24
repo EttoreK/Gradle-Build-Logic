@@ -17,7 +17,7 @@ Provider<Map<String, String>> secretoPropsProv = providers.of(LeitorProps) {
 // Definição de provedores para acesso à valores de configuração e diretórios
 Provider<Directory> projDirProv = project.providers.provider { project.layout.projectDirectory }
 Provider<Directory> buildDirProv = project.layout.buildDirectory
-Provider<String> instllDirProv = buildDirProv.dir('install')
+Provider<Directory> instllDirProv = buildDirProv.dir('install')
 Provider<Directory> genDirProv = buildDirProv.dir('tmp/generated')
 Provider<Boolean> eWindowsProv = providers.systemProperty('os.name').map {
     it.toLowerCase().contains('windows')
@@ -381,6 +381,8 @@ tasks.register('syncToLinux') {
     // Regras de inputs
     mustRunAfter tasks.named('criaEspolio') // roda a closure geradora antes de compilar
     inputs.files(tasks.named('criaEspolio'))
+    inputs.files secretoPropsProv
+    inputs.files progPropsProv
     inputs.dir project.file('src')
     inputs.dir espolioDirProv
     outputs.upToDateWhen { true } // executa só 1 vez
@@ -649,6 +651,7 @@ tasks.register('instalaDeps') {
 Closure<Void> cbuild = { Task tarefa, String alvo, String arqtt, String config ->
     String osAlvo = alvo.toLowerCase()
     String appDir = "main/${config}/${alvo}/${arqtt}/lib".toLowerCase()
+    Boolean ehLocal = true
 
     tarefa.group = 'C++ Actions'
     tarefa.description = "Compila nativamente via SSH em ${alvo}-${arqtt}"
@@ -658,14 +661,18 @@ Closure<Void> cbuild = { Task tarefa, String alvo, String arqtt, String config -
     // O build aguarda o Sync, se for remoto, ou a Geração, se for local
     if (osAlvo == 'windows' && eLinuxProv.get()) {
         tarefa.inputs.files(tasks.named('syncToWindows'))
+        ehLocal = false
     } else if (osAlvo == 'linux' && eWindowsProv.get()) {
         tarefa.inputs.files(tasks.named('syncToLinux'))
+        ehLocal = false
     } else {
         tarefa.inputs.files(tasks.named('criaEspolio'))
         tarefa.inputs.files(tasks.named((osAlvo == 'windows' ? 'winIco' : 'linIco')))
+        ehLocal = true
     }
     // Lê os arquivos .hpp criados
     tarefa.inputs.dir(genDirProv)
+
     if (osAlvo == 'windows') {
         tarefa.inputs.file(buildDirProv.map { it.file(arqtt == 'X86' ? 'icone32.o' : 'icone64.o') })
     }
@@ -695,8 +702,8 @@ Closure<Void> cbuild = { Task tarefa, String alvo, String arqtt, String config -
         } else {
             gppFlags << 'g++'
         }
-
-        gppFlags.addAll(pegaFlagsComp(alvo, arqtt, config, true)) // injeção de flags
+        
+        gppFlags.addAll(pegaFlagsComp(alvo, arqtt, config, ehLocal)) // injeção de flags
 
         Directory projDir = projDirProv.get()
         File cppDir = new File(projDir.asFile, 'src/main/cpp')
@@ -749,8 +756,9 @@ Closure<Void> cbuild = { Task tarefa, String alvo, String arqtt, String config -
         } else {
             // Remoto no SSH sempre será "build/..." a partir da raiz da VM
             String appDirRemoto = "build/install/${appDir}"
+            String winDir = appDirRemoto.replace('/', '\\')
             String dirCmd = osAlvo == 'windows' 
-                ? "if not exist \"${winPath}\" mkdir \"${winPath}\"" 
+                ? "if not exist \"${winDir}\" mkdir \"${winDir}\"" 
                 : "mkdir -p '${appDirRemoto}'"
             comandoRemoto(osAlvo, [dirCmd]).execute().waitForProcessOutput()
             saidaDir = "${appDirRemoto}/${nomeExe}"
@@ -882,7 +890,7 @@ Closure<Void> ctest = { Task tarefa, String alvo, String arqtt, String config ->
             projDirProv.get().asFile.toPath().toString().replace('\\', '/') + "/", ""
         )
         // Cópia local de recursos antes do teste
-        File exeLocalDir = new File(buildDirProv.get().asFile, "install/test/${testDirRel}")
+        File exeLocalDir = new File(buildDirProv.get().asFile, "install/test/${testDir}")
         copiaRes(exeLocalDir)
 
         if (osAlvo == 'linux') {
@@ -915,12 +923,12 @@ Closure<Void> ctest = { Task tarefa, String alvo, String arqtt, String config ->
         }
         
         List<String> cmds
+        String dirRemoto = "build/install/test/${testDir}"
         if (osAlvo == 'windows') {
             if (eWindowsProv.get()) {
                 // Usa o diretório absoluto local do exeDir
                 cmds = ["cd /d \"${exeLocalDir.absolutePath}\"", '&&', nomeExe]
             } else {
-                String dirRemoto = "build/install/test/${testDir}"
                 cmds = ["cd \"${dirRemoto.replace(File.separator, '/')}\"", '&&', nomeExe]
             }
         } else {

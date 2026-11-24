@@ -37,7 +37,7 @@ android {
     // Controle sobre compilaação
     buildFeatures{
         buildConfig = false
-        viewBinding = true
+        viewBinding = true // ativa a view binding para melhorar as views do aplicativo
     }
     // Controle de builds para o aplicativo
     buildTypes {
@@ -64,10 +64,6 @@ android {
             keyAlias = 'androiddebugkey'
             keyPassword = 'android'
         }
-    }
-    // Ativa a view binding para melhorar as views do aplicativo
-    viewBinding {
-        enable = true
     }
 }
 // Configuração para o nome do apk

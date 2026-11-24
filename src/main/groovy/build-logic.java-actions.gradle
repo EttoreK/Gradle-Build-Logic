@@ -10,7 +10,7 @@ Provider<Map<String, String>> progPropsProv = providers.of(LeitorProps) {
     parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
 }
 Provider<Map<String, String>> secretoPropsProv = providers.of(LeitorProps) { 
-    String nomeArq = providers.gradleProperty('scrtPropertiesNome').getOrElse('programa.properties')
+    String nomeArq = providers.gradleProperty('scrtPropertiesNome').getOrElse('secreto.properties')
     parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
 }
 // Provedores para acesso lazy às variáveis
@@ -58,7 +58,7 @@ tasks.named('bootJar') { // Compilador padrão
 }
 // Configurado para alterar o nome do jar gerado e otimizar o tamanho dos arquivos
 tasks.register('orderJar', Jar) { // Compilador secundário -Pthin=true
-    group = 'WebActions'
+    group = 'Web Actions'
     description = 'Gera o JAR magro e copia as dependências para a pasta lib/'
     onlyIf{ jarMagroProv.get() }
 
@@ -72,20 +72,33 @@ tasks.register('orderJar', Jar) { // Compilador secundário -Pthin=true
     destinationDirectory.set(deployDirProv)
     // Puxa apenas o zip do ProGuard
     from({ zipTree(buildDirProv.file('intermediates/minified-project.jar')) })
+
+    Provider<String> classPathProv = configurations.named('runtimeClasspath')
+        .flatMap { Configuration cfg -> cfg.elements }
+        .map { Set<FileSystemLocation> arqs ->
+            arqs.collect { FileSystemLocation loc -> loc.asFile.name }
+                .findAll { String nome ->
+                    !nome.startsWith('bib-lista') && !nome.startsWith('spring-boot-jarmode-tools')
+                }
+                .sort()
+                .collect { String nome -> "lib/${nome}" }
+                .join(' ')
+        }
+    
+    inputs.property('manifestClassPath', classPathProv)
     
     manifest {
-        attributes(
-            'Main-Class': 'com.oboco.web.LoggerApplication',
-            'Class-Path': project.providers.provider {
-                configurations.runtimeClasspath.files
-                    .findAll { !it.name.startsWith('bib-lista') }
-                    .collect { "lib/${it.name}" }.join(' ')
-            }
-        )
+        attributes('Main-Class': 'com.oboco.web.LoggerApplication')
+    }
+
+    doFirst {
+        manifest {
+            attributes('Class-Path': classPathProv.get())
+        }
     }
 }
 // Cria cópia das Libs separadamente
-tasks.register('orderLibs', Copy) {
+tasks.register('orderLibs', Sync) {
     group = 'WebActions'
     description = 'Copia as dependências para a pasta lib/'
     onlyIf{ jarMagroProv.get() }
@@ -155,7 +168,7 @@ tasks.register('runWeb') { // http://localhost:8080
         ProcessBuilder pb
         if (System.getProperty('os.name').toLowerCase().contains('windows')) {
             pb = new ProcessBuilder('cmd', '/c', 'start', 'cmd', '/k', 'java', '-jar', jarArq.name)
-        } else { pb = new ProcessBuilder('sh', '-c', 'java', '-jar', jarArq.name, '&') }
+        } else { pb = new ProcessBuilder('sh', '-c', "java -jar \"${jarArq.name}\" &") }
 
         pb.directory(deployDir)
         pb.start()
@@ -278,7 +291,7 @@ tasks.register('submitWeb') {
         String appJar = "${nomeAppProv.get().toString().toLowerCase()}.jar"
 
         if (!dono || !sede || !dir) {
-            throw new GradleException('Faltam variáveis do servidor no local.properties!')
+            throw new GradleException('Faltam variáveis do servidor no secreto.properties!')
         }
 
         File baseLocaldir = deployDirProv.get().asFile
