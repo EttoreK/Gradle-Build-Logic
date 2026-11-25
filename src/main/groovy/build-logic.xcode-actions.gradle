@@ -27,7 +27,7 @@ Provider<String> appleIdProv = secretoPropsProv.map { it.get('apple.appleId') }
 Provider<String> appleSenhaProv = secretoPropsProv.map { it.get('apple.senha') }
 Provider<String> certificadoProv = secretoPropsProv.map { it.get('apple.certificado') }
 Provider<String> nomePerfilProv = secretoPropsProv.map { it.get('apple.nomePerfil') }
-Provider<String> simuladorUsualProv = localPropsProv.map { it.get('simulador.ios') }
+Provider<String> simuladorUsualProv = localPropsProv.map { it.getOrDefault('simulador.ios', '') }
 // Busca um simulador de iOS disponível e armazena em cache
 Closure<String> pegaSimulador = {
     String simuladorUsual = simuladorUsualProv.get()
@@ -196,25 +196,26 @@ tasks.register('cleanMac', Exec) {
             boolean eMac = getEMacProv().get()
             String simulador = pegaSimulador()
             String dirXc = getDirXcProv().get()
-            String donoMac = '\$(getconf DARWIN_USER_CACHE_DIR)' // pra reduzir o tamanho da linha
+            String donoMac = '$(getconf DARWIN_USER_CACHE_DIR)' // pra reduzir o tamanho da linha
+            String xcodeDir = '$HOME/Library/Developer/Xcode'
 
             return xcConfig.comandoRemoto([
                 // Finaliza Processos e Executa o Clean Oficial
                 'killall', 'Xcode', '|| true &&',
                 'xcrun', '-k', '|| true &&',
                 // Limpa Caches do Compilador e do Sistema
-                'rm', '-rf', "\'${donoMac}/org.llvm.clang/ModuleCache\'", '|| true &&',
-                'rm', '-rf', "\'${donoMac}/org.llvm.clang.\$(whoami)/ModuleCache\'", '|| true &&',
-                'rm', '-rf', "\'${donoMac}/com.apple.dt.Xcode/*\'", '|| true &&',
+                'rm', '-rf', "\"${donoMac}/org.llvm.clang/ModuleCache\"", '|| true &&',
+                'rm', '-rf', "\"${donoMac}/org.llvm.clang.\$(whoami)/ModuleCache\"", '|| true &&',
+                'rm', '-rf', "\"${donoMac}/com.apple.dt.Xcode/\"*", '|| true &&',
                 // Limpa Caches do Usuário e do Xcode
-                'rm', '-rf', '\'~/Library/Developer/Xcode/DerivedData/*\'', '|| true &&',
-                'rm', '-rf', '\'~/Library/Developer/Xcode/UserData/Previews/*\'', '|| true &&',
-                'rm', '-rf', '\'~/Library/Caches/com.apple.dt.Xcode/*\'', '|| true &&',
+                'rm', '-rf', "\"${xcodeDir}/DerivedData/\"*", '|| true &&',
+                'rm', '-rf', "\"${xcodeDir}/UserData/Previews/\"*", '|| true &&',
+                'rm', '-rf', '\"$HOME/Library/Caches/com.apple.dt.Xcode/\"*', '|| true &&',
                 // Limpa Caches de Suporte a Dispositivos Físicos
-                'rm', '-rf', '\'~/Library/Developer/Xcode/iOS DeviceSupport/*\'', '|| true &&',
-                'rm', '-rf', '\'~/Library/Developer/Xcode/watchOS DeviceSupport/*\'', '|| true &&',
-                'rm', '-rf', '\'~/Library/Developer/Xcode/tvOS DeviceSupport/*\'', '|| true &&',
-                'rm', '-rf', '\'~/Library/Developer/Xcode/visionOS DeviceSupport/*\'', '|| true &&',
+                'rm', '-rf', "\"${xcodeDir}//iOS DeviceSupport/\"*", '|| true &&',
+                'rm', '-rf', "\"${xcodeDir}//watchOS DeviceSupport/\"*", '|| true &&',
+                'rm', '-rf', "\"${xcodeDir}//tvOS DeviceSupport/\"*", '|| true &&',
+                'rm', '-rf', "\"${xcodeDir}//visionOS DeviceSupport/\"*", '|| true &&',
                 // Limpa Caches do Simulador
                 'xcrun', 'simctl shutdown', "\'${simulador}\'", '|| true &&',
                 'xcrun', 'simctl erase', "\'${simulador}\'", '|| true &&',
@@ -229,6 +230,7 @@ Closure<Void> xbuild = { Task tarefa, String platforma, String sdk, String confi
     tarefa.description = "Compila o projeto Xcode para ${platforma.toUpperCase()} (${config})"
     tarefa.group = 'Xcode Actions'
     tarefa.inputs.dir xcConfig.srcDir.get()
+    tarefa.inputs.files(tasks.named('xproj'))
     tarefa.inputs.dir xcConfig.xcodeProj.get()
     tarefa.inputs.files(tasks.named('syncToMac')) // garante sync antes do build, se remoto
     tarefa.outputs.files({xcConfig.eMac.get() ? pegaArquivos("${config}-${sdk}") : null}).optional()
@@ -266,7 +268,7 @@ Closure<Void> xrun = { Task tarefa, String platforma, String sdk, String config 
     tarefa.description = "Executa o app compilado para ${platforma.toUpperCase()} (${config})"
     tarefa.group = 'Xcode Actions'
     tarefa.inputs.files(tasks.named("build${platforma.capitalize()}")) // depende do build
-    tarefa.inputs.files(pegaArquivos("${config}-${sdk}"))
+    tarefa.inputs.files(pegaArquivos("${config}-${sdk}")).optional()
     tarefa.outputs.upToDateWhen { false } // sempre executa
 
     tarefa.executable = pegaExecutavelBase()
@@ -286,7 +288,7 @@ Closure<Void> xrun = { Task tarefa, String platforma, String sdk, String config 
                 'xcrun', 'simctl bootstatus', "\'${simulador}\'", '&&',
                 'xcrun', 'simctl install', "\'${simulador}\'", "\'${app}\'", '&&',
                 'xcrun', 'simctl launch', "\'${simulador}\'", "\'${getIdPacotAppProv().get()}.ios\'"
-            ])} else { comandos.addAll(['open', app]) }
+            ])} else { comandos.addAll(['open', "\'${app}\'"]) }
 
             return xcConfig.comandoRemoto(comandos).drop(1)
         }
@@ -386,6 +388,7 @@ Closure<Void> xarchive = { Task tarefa, String platforma, String sdk ->
     tarefa.description = "Cria um arquivo .xcarchive para ${platforma.toUpperCase()} (Release)"
     tarefa.group = 'Xcode Actions'
     tarefa.inputs.dir xcConfig.srcDir.get()
+    tarefa.inputs.files(tasks.named('xproj'))
     tarefa.inputs.dir xcConfig.xcodeProj.get()
     tarefa.inputs.files(tasks.named('syncToMac'))
 

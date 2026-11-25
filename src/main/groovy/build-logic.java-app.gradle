@@ -4,6 +4,7 @@ plugins.apply(libs.plugins.buildLogicJavaGeral.get().getPluginId()) // configura
 plugins.apply(libs.plugins.buildLogicJavaActions.get().getPluginId()) // ações de build
 // Biblioteras para serem usadas no código
 dependencies {
+    implementation platform(libs.spBtBootBom)
     implementation libs.spBtStrTom
     implementation(libs.spBtStrThy) {
         exclude group: 'org.yaml', module: 'snakeyaml'

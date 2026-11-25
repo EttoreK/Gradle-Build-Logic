@@ -381,8 +381,6 @@ tasks.register('syncToLinux') {
     // Regras de inputs
     mustRunAfter tasks.named('criaEspolio') // roda a closure geradora antes de compilar
     inputs.files(tasks.named('criaEspolio'))
-    inputs.files secretoPropsProv
-    inputs.files progPropsProv
     inputs.dir project.file('src')
     inputs.dir espolioDirProv
     outputs.upToDateWhen { true } // executa só 1 vez
@@ -703,7 +701,7 @@ Closure<Void> cbuild = { Task tarefa, String alvo, String arqtt, String config -
             gppFlags << 'g++'
         }
         
-        gppFlags.addAll(pegaFlagsComp(alvo, arqtt, config, ehLocal)) // injeção de flags
+        gppFlags.addAll(pegaFlagsComp(alvo, arqtt, config, !ehLocal)) // injeção de flags
 
         Directory projDir = projDirProv.get()
         File cppDir = new File(projDir.asFile, 'src/main/cpp')
@@ -735,7 +733,7 @@ Closure<Void> cbuild = { Task tarefa, String alvo, String arqtt, String config -
         // Prepara o Wayland remotamente (Apenas para Linux)
         if (osAlvo == 'linux') {
             String xmlArq = '/usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml'
-            String pasta = "build/tmp/wayland" // pasta dentro da VM
+            String pasta = "build/tmp/wayland${arqtt.toLowerCase()}" // pasta dentro da VM
             String gccArqtt = arqtt == 'X86' ? '-m32' : '-m64'
             String wlCmd = "mkdir -p ${pasta} && " +
                 "wayland-scanner client-header ${xmlArq} ${pasta}/xdg-shell-client-protocol.h && " +
@@ -827,11 +825,11 @@ Closure<Void> crun = { Task tarefa, String alvo, String arqtt, String config ->
                     ]
                 } else {
                     cmds = [
-                        'export XDG_RUNTIME_DIR=/run/user/$(id -u)', '&&', 
-                        'export WAYLAND_DISPLAY=wayland-0', '&&', 'export DISPLAY=:0', '&&', 
-                        "cd '${appDirRemoto}'", '&&', 
-                        "setsid sh -c 'exec ./${nomeExe} > /dev/null 2>&1 < /dev/null &'",
-                        "> /dev/null 2>&1"
+                        'export XDG_RUNTIME_DIR=/run/user/$(id -u)', '&&',
+                        'export WAYLAND_DISPLAY=$(ls /run/user/$(id -u)/wayland-* 2>/dev/null | head -n 1 | xargs basename 2>/dev/null || echo wayland-0)', '&&',
+                        'export DISPLAY=:0', '&&',
+                        "cd '${appDirRemoto}'", '&&',
+                        "nohup ./${nomeExe} >/dev/null 2>&1 </dev/null &"
                     ]
                 }
             }
@@ -872,7 +870,7 @@ Closure<Void> ctest = { Task tarefa, String alvo, String arqtt, String config ->
     String tarefaNativaNome = "installTest${alvo}${arqtt}"
     String buildNome = "build${alvo == 'Windows' ? 'Win' : 'Lin'}${arqtt == 'X86' ? '32' : '64'}"
 
-    tarefa.group = 'C++ Actions' // grupo padrão para testes
+    tarefa.group = 'C++ Actions'
     tarefa.description = "Executa os testes unitários em ${alvo}-${arqtt}"
     tarefa.inputs.files(tasks.named("${buildNome}${config == 'Release' ? 'Release' : ''}"))
     tarefa.inputs.dir(tarefa.project.file('src/test'))

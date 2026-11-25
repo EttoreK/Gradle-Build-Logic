@@ -23,9 +23,8 @@ Provider<String> nomeAppProv = progPropsProv.map { it.getOrDefault('projNome', '
 Provider<String> espNomeProv = progPropsProv.map { it.getOrDefault('espolioDir', 'espolio') }
 Provider<String> verNumProv = progPropsProv.map { it.getOrDefault('appVerNum', '1') }
 Provider<Boolean> jarMagroProv = project.providers.gradleProperty('buildMagroWeb').map { 
-    it.toBoolean() }.orElse( project.providers.provider { 
-        gradle.startParameter.taskNames.contains('submitWeb') //verifica qual tarefa chamou o build
-    })
+    it.toBoolean() 
+}.orElse(gradle.startParameter.taskNames.contains('submitWeb'))
 // Tarefas personalizadas
 tasks.named('jar') { enabled = false } // destivado para não gerar jar parciais
 // Configurado para alterar o nome do jar gerado e otimizar o tamanho do arquivo
@@ -99,7 +98,7 @@ tasks.register('orderJar', Jar) { // Compilador secundário -Pthin=true
 }
 // Cria cópia das Libs separadamente
 tasks.register('orderLibs', Sync) {
-    group = 'WebActions'
+    group = 'Web Actions'
     description = 'Copia as dependências para a pasta lib/'
     onlyIf{ jarMagroProv.get() }
 
@@ -111,7 +110,7 @@ tasks.register('orderLibs', Sync) {
 }
 // Apaga a pasta do inteira de build
 tasks.register('cleanWeb') {
-    group = 'WebActions'
+    group = 'Web Actions'
     description = 'Limpa o ambiente java web, para testes completos'
     outputs.upToDateWhen { false }
     finalizedBy tasks.named('clean')
@@ -137,21 +136,26 @@ tasks.register('minWebJar', proguard.gradle.ProGuardTask) {
 }
 // Compilação do aplicativo
 tasks.register('buildWeb') {
-    group = 'WebActions'
+    group = 'Web Actions'
     description = 'Compila para criar um, ou vários, .jar'
-    mustRunAfter(jarMagroProv.map { boolean eThin -> 
-        eThin ? tasks.named('orderJar') : tasks.named('bootJar') 
-    })
-    inputs.files(jarMagroProv.map { boolean eThin -> 
-        eThin ? tasks.named('orderJar') : tasks.named('bootJar') 
-    })
+
+    Provider<RegularFile> orderJarArqProv = tasks.named('orderJar', AbstractArchiveTask).flatMap { 
+        it.archiveFile 
+    }
+    Provider<RegularFile> bootJarArqProv = tasks.named('bootJar', AbstractArchiveTask).flatMap { 
+        it.archiveFile 
+    }
+    Provider<RegularFile> jarAlvoProv = jarMagroProv.flatMap { boolean eThin ->
+        eThin ? orderJarArqProv : bootJarArqProv
+    }
+    inputs.file(jarAlvoProv)
     outputs.file(buildDirProv.file(nomeAppProv.flatMap 
         { String nome -> verNumProv.map { String ver -> "distributions/${nome}-${ver}.jar" } }
     ))
 }
 // Roda em terminal externo
 tasks.register('runWeb') { // http://localhost:8080
-    group = 'WebActions'
+    group = 'Web Actions'
     description = 'Executa se o JAR já existente na pasta lib'
     mustRunAfter assemble // só tenta rodar se o arquivo realmente existir
     inputs.files(tasks.named('buildWeb'))
@@ -180,7 +184,7 @@ tasks.register('runWeb') { // http://localhost:8080
 }
 // Realiza todos os testes
 tasks.register('testWeb') {
-    group = 'WebActions'
+    group = 'Web Actions'
     description = 'Realiza os testes para o aplicativo web'
     finalizedBy tasks.named('check')
     finalizedBy tasks.named('test')

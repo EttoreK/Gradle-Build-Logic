@@ -11,14 +11,14 @@ Provider<Map<String, String>> progPropsProv = providers.of(LeitorProps) {
 }
 // Limpa todo o diretório de build
 tasks.register('cleanAndroid') {
-    group = 'androidActions'
+    group = 'Android Actions'
     description = 'Limpa os builds anteriores do Android'
     outputs.upToDateWhen { false }
     finalizedBy tasks.named('clean')
 }
 // Manipulação do arquivo .classpath para o VS Code parar de reclamar
 tasks.register('posBuild') {
-    group = 'androidActions'
+    group = 'Android Actions'
     description = 'Sobereescreve o .classpath incluindo módulos e dependências'
     mustRunAfter tasks.named('buildAndroid')
     // captura todas as dependências de compilação Bibliotecas e Subprojetos
@@ -149,7 +149,7 @@ tasks.register('posBuild') {
 }
 // Compila o Android
 tasks.register('buildAndroid') {
-    group = 'androidActions'
+    group = 'Android Actions'
     description = 'Compila o projeto Android (Debug e Release)'
     mustRunAfter tasks.named('cleanAndroid')
     finalizedBy tasks.named('posBuild')
@@ -157,7 +157,7 @@ tasks.register('buildAndroid') {
 }
 // Instala o app no simulador e executa o app
 tasks.register('runSimulatorAndroid', Exec){
-    group = 'androidActions'
+    group = 'Android Actions'
     description = 'Executa o simulador Android e instala o programa'
     mustRunAfter tasks.named('installDebug')
     outputs.upToDateWhen { false }
@@ -179,7 +179,7 @@ tasks.register('runSimulatorAndroid', Exec){
 }
 // Inicia o primeiro emulador android encontrado
 tasks.register('runAndroid') {
-    group = 'androidActions'
+    group = 'Android Actions'
     description = 'Executa o simulador Android e roda o programa'
     finalizedBy tasks.named('installDebug')
     finalizedBy tasks.named('runSimulatorAndroid')
@@ -253,11 +253,23 @@ tasks.register('runAndroid') {
 }
 // Rodar todos os testes para Android
 tasks.register('testAndroid') {
-    group = 'androidActions'
+    group = 'Android Actions'
     description = 'Roda apenas os testes unitários do Android.'
+    mustRunAfter tasks.named('installDebug')
+    mustRunAfter tasks.named('runSimulatorAndroid')
+    mustRunAfter tasks.named('runAndroid')
     inputs.files(tasks.named('runAndroid'))
     inputs.files(tasks.named('check'))
     inputs.files(tasks.named('connectedCheck'))
+}
+
+tasks.matching { it.name == 'installDebug' }.configureEach {
+    mustRunAfter tasks.named('buildAndroid')
+}
+
+tasks.matching { it.name == 'connectedDebugAndroidTest' }.configureEach {
+    mustRunAfter tasks.named('installDebug')
+    mustRunAfter tasks.named('runSimulatorAndroid')
 }
 // Biblioteras para serem usadas no código
 // dependencies {}

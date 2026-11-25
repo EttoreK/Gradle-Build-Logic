@@ -33,12 +33,6 @@ abstract class XcConfig {
     abstract Property<String> getXcodeProj() 
 
     List<String> comandoRemoto(List<String> cmds) {
-        // Extrai os valores das próprias propriedades nativas da Extension
-        boolean eMac = geteMac().get()
-        String dono = getMacDono().get()
-        String sede = getMacSede().get()
-        String dirApp = getVmAppDir().get()
-
         final Map<String, String> vmCmds = [
             bash: '/bin/bash',
             chmod: '/bin/chmod',
@@ -52,9 +46,14 @@ abstract class XcConfig {
             xcrun: '/usr/bin/xcrun',
         ]
         
-        if (eMac) { 
+        if (geteMac().get()) { 
             return ['bash', '-c', cmds.join(' ')] 
         } else {
+            // Extrai os valores das próprias propriedades nativas da Extension
+            String dono = getMacDono().get()
+            String sede = getMacSede().get()
+            String dirApp = getVmAppDir().get()
+
             if (!dono || !sede) {
                 throw new Exception('Credenciais não configuradas pra MacOs')
             }

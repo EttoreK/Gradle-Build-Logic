@@ -24,7 +24,7 @@ android {
     testNamespace = idPacoteProv.get().concat(testPacoteProv.get())
     // Configurações padrão para o aplicativo Android
     defaultConfig {
-        applicationId "${idPacoteProv.get()}.${projNomeProv.get()}" // id do aplicativo
+        applicationId "${idPacoteProv.get()}.${projNomeProv.get().toLowerCase()}" // id aplicativo
         versionCode verNumProv.get().toInteger() // versão de registro no Google Play
         versionName verNomeProv.get() // nome da versão em exibição
     }

@@ -49,14 +49,14 @@ Closure<String> pegaVersaoSwift = {
     return ver.swift.get() 
 }
 // Gera um UUID aleatório de 24 caracteres, diferente em cada geração, para builds limpas
-Closure<String> criaUuid = {
-    java.util.UUID.nameUUIDFromBytes(dir.join(':').bytes)
+Closure<String> criaUuid = { String... dir ->
+    java.util.UUID.nameUUIDFromBytes(dir.join(':').getBytes('UTF-8'))
         .toString().replace('-', '').substring(0, 24).toUpperCase() 
     // java.util.UUID.randomUUID().toString().replace('-', '').substring(0, 24).toUpperCase() 
 }
 // Pega um UUID existente do mapa uuids ou cria um novo se não existir
 Closure<String> pegaUuid = { Map uuidsMap, String... dir -> return dir[0..-2].inject(uuidsMap) { 
-    Map map, String key -> map.get(key, [:]) }.get(dir[-1], criaUuid()) 
+    Map map, String key -> map.get(key, [:]) }.get(dir[-1], criaUuid(dir)) 
 }
 // Pega ou cria uma lista de seções dentro do mapa ePBX
 Closure<List<String>> pegaLista = { Map map, String nome -> return map.computeIfAbsent(nome) {[]} }
@@ -177,7 +177,7 @@ Closure<String> configuraBuild = { String nome, String alvo, String tipo, String
     String testeTipo = null
     if (alvo) {
         if (tipo.contains('ui') && nome.contains('UI')) { testeTipo = 'UI' }
-        else if (tipo.contains('ui') && nome.contains('Intg')) { testeTipo = 'Intg' }
+        else if (tipo.contains('intg') && nome.contains('Intg')) { testeTipo = 'Intg' }
         else if (tipo.contains('unit') && nome.contains('Unit')) { testeTipo = ''}
     }
     String buildXDir = xcConfig.buildXDir.get()
@@ -702,7 +702,7 @@ Closure<Void> escreveArquivosFinais = { Map uuidsMap, Map ePBXMap, Map provsMap,
                 testavel, [testavel], alvoSedeMap, xcodeProjDir)
         }
         // .plist para export
-        new File(pbxArq.parentFile, 'exportOptions.plist').text = """
+        new File(pbxArq.parentFile, 'exportOptions.plist').text = """\
             <?xml version=\"1.0\" encoding=\"UTF-8\"?>
             <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\">
             <plist version=\"1.0\">
@@ -813,6 +813,9 @@ tasks.register('xIcone') {
     Provider<RegularFile> fundoSvgProv = espolioDirProv.map { it.file('icones/appBackground.svg') }
     Provider<RegularFile> frenteSvgProv = espolioDirProv.map { it.file('icones/appForeground.svg') }
     Provider<String> winDiscProv = localPropsProv.map { it.getOrDefault('unidade.win', 'C') }
+    Provider<Boolean> eLinuxProv = providers.systemProperty('os.name').map { 
+        it.toLowerCase().contains('linux') 
+    }
     
     inputs.files(fundoSvgProv, frenteSvgProv)
     outputs.dir xcassetsDirProv
@@ -827,11 +830,11 @@ tasks.register('xIcone') {
         // Cria a estrutura exata do Xcode: Assets.xcassets/AppIcon.xcassetsDir
         File iconeDir = new File(xcassetsDir, 'AppIcon.appiconset')
         if (!iconeDir.exists()) iconeDir.mkdirs()
+        String magickCmd = (xcConfig.eMac.get() || eLinuxProv.get())
+            ? 'magick' : "${winDiscProv.get()}:/msys64/ucrt64/bin/magick.exe"
 
         List<String> mesclaSVG = [
-            (xcConfig.eMac.get() || providers.systemProperty('os.name').map {
-                it.toLowerCase().contains('linux')
-            }.get()) ? 'magick' : "${winDiscProv.get()}:/msys64/ucrt64/bin/magick.exe", 
+            magickCmd, 
             '-background', 'none', 
             fundoSVG.absolutePath, 
             frenteSVG.absolutePath, 
@@ -840,10 +843,22 @@ tasks.register('xIcone') {
             '-alpha', 'remove',
             new File(iconeDir, 'app_apple_1024.png').absolutePath 
         ]
-        
-        Process processo = mesclaSVG.execute()
-        processo.waitForProcessOutput(System.out, System.err)
-        if (processo.exitValue() != 0) throw new GradleException('Falha no ImageMagick (Apple)')
+
+        // Configura o ProcessBuilder para o ImageMagick
+        ProcessBuilder pbMagick = new ProcessBuilder(mesclaSVG)
+        if (!(xcConfig.eMac.get() || eLinuxProv.get())) {
+            // Injeta a ucrt64/bin no PATH para o magick.exe encontrar as DLLs de SVG e do MSYS2
+            pbMagick.environment().put('PATH', "${winDiscProv.get()}:/msys64/ucrt64/bin" + 
+                File.pathSeparator + pbMagick.environment().get('PATH')
+            )
+        }
+
+        StringBuilder erroM = new StringBuilder()
+        Process prcessoMesclar = pbMagick.start()
+        prcessoMesclar.waitForProcessOutput(System.out, erroM)
+        if (prcessoMesclar.exitValue() != 0) { 
+            throw new GradleException("Falha no ImageMagick (Apple): ${erroM.toString().trim()}") 
+        }
         // Escreve o manifesto JSON que diz ao compilador do Xcode o que é essa imagem
         new File(iconeDir, 'Contents.json').text = """
         {
