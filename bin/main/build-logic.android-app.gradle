@@ -1,12 +1,15 @@
-// Declaração dos plugins da app
-// plugins {}
-plugins.apply(libs.plugins.buildLogicAndroidGeral.get().getPluginId()) // configurações do android
-plugins.apply(libs.plugins.buildLogicAndroidActions.get().getPluginId()) // ações de build
-// Propriedades do Projeto
 Provider<Map<String, String>> progPropsProv = providers.of(LeitorProps) { 
     String nomeArq = providers.gradleProperty('progPropertiesNome').getOrElse('programa.properties')
     parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
 }
+// Define o diretório de build usando o nome dinâmico da pasta
+project.layout.buildDirectory.set(project.layout.dir( progPropsProv.map { 
+    new File(project.rootDir, it.getOrDefault('buildDirAndroid', 'build/java/android')) 
+}))
+// Declaração dos plugins da app
+// plugins {}
+plugins.apply(libs.plugins.buildLogicAndroidGeral.get().getPluginId()) // configurações do android
+plugins.apply(libs.plugins.buildLogicAndroidActions.get().getPluginId()) // ações de build
 // Define o diretório de build
 Provider<String> projNomeProv = progPropsProv.map { it.getOrDefault('projNome', 'Modelo') }
 Provider<String> idPacoteProv = progPropsProv.map { it.getOrDefault('appIdPacote', 'com.modelo') }
@@ -14,9 +17,6 @@ Provider<String> mainPacoteProv = progPropsProv.map { it.getOrDefault('javaMainP
 Provider<String> testPacoteProv = progPropsProv.map { it.getOrDefault('javaTestPacote', '.test') }
 Provider<String> verNomeProv = progPropsProv.map { it.getOrDefault('appVerNome', '0.0.1') }
 Provider<String> verNumProv = progPropsProv.map { it.getOrDefault('appVerNum', '1') }
-project.layout.buildDirectory.set(project.layout.dir( progPropsProv.map { 
-    new File(project.rootDir, it.getOrDefault('buildDirAndroid', 'build/java/android')) 
-}))
 // Definição das características do aplicativo
 android {
     // ids para pacotes do app e testes
@@ -37,7 +37,7 @@ android {
     // Controle sobre compilaação
     buildFeatures{
         buildConfig = false
-        viewBinding = true // ativa a view binding para melhorar as views do aplicativo
+        viewBinding = false // ativa a view binding para melhorar as views do aplicativo
     }
     // Controle de builds para o aplicativo
     buildTypes {
@@ -83,14 +83,23 @@ dependencies {
     androidTestImplementation libs.adrxTestEspresso // framework do Andoird para testes
     androidTestImplementation libs.adrxTestExtJunit // empacota tudo isso e manda o executor do Java
     androidTestImplementation libs.adrxTestRules // cria atalhos fáceis para abrir e fechar as telas
-    implementation libs.material // experiência visual
-    implementation libs.adrxActivity // base para fazer Activities
-    implementation libs.adrxAppcompat // compatibilidade com versões antigas
-    implementation libs.adrxAnnotat // necessário para usar @NonNull, @Nullable
-    implementation libs.adrxLifeCycle // necessário pro classpath
+    compileOnly libs.jetBsAnnot
     testImplementation libs.junitAPI // api dp Junit 5
     testImplementation libs.mockitoCore // para usar o mockito
     testImplementation libs.mockitoJunit // para mockar métodos estáticos
     testRuntimeOnly libs.junitEngine // engine do Junit 5
     testRuntimeOnly libs.junitPlt // necessário
+}
+
+configurations.matching {
+    it.name in [
+        'debugCompileClasspath', 'debugRuntimeClasspath', 'releaseCompileClasspath', 
+        'releaseRuntimeClasspath'
+    ]
+}.configureEach {
+    resolutionStrategy.eachDependency { DependencyResolveDetails det ->
+        if (det.requested.group in ['org.jetbrains.kotlin', 'org.jetbrains.kotlinx']) {
+            throw new GradleException("Dependência Kotlin proibida em produção: ${det.requested}")
+        }
+    }
 }

@@ -14,7 +14,7 @@ java {
 }
 // Biblioteras para serem usadas no código
 dependencies {
-    compileOnly libs.jetBsAnnot // biblioteca padrão para @Nullable e @NonNull
+    compileOnly libs.jetBsAnnot // biblioteca padrão para @Nullable e @NotNull
     testImplementation libs.mockitoCore // para usar o mockito
     testImplementation libs.mockitoJunit // para mockar métodos estáticos
 }

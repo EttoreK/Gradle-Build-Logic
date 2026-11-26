@@ -1,5 +1,3 @@
-// Declaração dos plugins
-// plugins {}
 Provider<Map<String, String>> progPropsProv = providers.of(LeitorProps) { 
     String nomeArq = providers.gradleProperty('progPropertiesNome').getOrElse('programa.properties')
     parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
@@ -8,6 +6,8 @@ Provider<Map<String, String>> progPropsProv = providers.of(LeitorProps) {
 project.layout.buildDirectory.set(project.layout.dir( progPropsProv.map { 
     new File(project.rootDir, it.getOrDefault('buildDirWeb', 'build/java/web')) 
 }))
+// Declaração dos plugins
+// plugins {}
 // Configurações do Spring e exclusão de bibliotecas padrão
 project.configurations {
     // Remove o todas as dependências de uma vez
@@ -24,6 +24,21 @@ project.configurations {
         exclude group: 'jakarta.xml.bind', module: 'jakarta.xml.bind-api'
         exclude group: 'org.glassfish.jaxb', module: 'jaxb-runtime'
         exclude group: 'com.vaadin.external.google', module: 'android-json'
+    }
+}
+
+configurations.matching {
+    it.name in [
+        'compileClasspath', 'runtimeClasspath', 'testCompileClasspath', 'testRuntimeClasspath'
+    ]
+}.configureEach {
+    exclude group: 'org.jetbrains.kotlin'
+    exclude group: 'org.jetbrains.kotlinx'
+
+    resolutionStrategy.eachDependency { DependencyResolveDetails det ->
+        if (det.requested.group in ['org.jetbrains.kotlin', 'org.jetbrains.kotlinx']) {
+            throw new GradleException("Dependência Kotlin proibida detectada: ${det.requested}")
+        }
     }
 }
 // Configuração das fontes de recursos, bibliotecas e arquivos

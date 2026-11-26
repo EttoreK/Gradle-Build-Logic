@@ -1,16 +1,17 @@
-// Declaração dos plugins da app
-// plugins {}
-plugins.apply(libs.plugins.buildLogicCppGeral.get().getPluginId()) // configurações do android
-plugins.apply(libs.plugins.buildLogicCppActions.get().getPluginId()) // ações de build
-// Define o diretório de build
 Provider<Map<String, String>> progPropsProv = providers.of(LeitorProps) { 
     String nomeArq = providers.gradleProperty('progPropertiesNome').getOrElse('programa.properties')
     parameters.propertiesFile.set(new File(project.rootDir, nomeArq))
 }
-Provider<String> projNomeProv = progPropsProv.map { it.getOrDefault('projNome', 'Modelo') }
+// Define o diretório de build usando o nome dinâmico da pasta
 project.layout.buildDirectory.set(project.layout.dir( progPropsProv.map { 
     new File(project.rootDir, it.getOrDefault('buildDirCpp', 'build/cpp')) 
 }))
+// Declaração dos plugins da app
+// plugins {}
+plugins.apply(libs.plugins.buildLogicCppGeral.get().getPluginId()) // configurações do android
+plugins.apply(libs.plugins.buildLogicCppActions.get().getPluginId()) // ações de build
+
+Provider<String> projNomeProv = progPropsProv.map { it.getOrDefault('projNome', 'Modelo') }
 // Configurações da aplicação
 application {
     baseName.set(projNomeProv.get()) // nome do produto gerado

@@ -239,12 +239,9 @@ tasks.register('webIco') {
     group = 'Web Actions'
     description = 'Gera o icone.png para a aplicação Web'
 
-    Provider<RegularFile> fundoSvgProv = project.layout.file(espNomeProv.map {
-        new File(project.rootDir, "${it}/icones/appBackground.svg")
-    })
-    Provider<RegularFile> frenteSvgProv = project.layout.file(espNomeProv.map {
-        new File(project.rootDir, "${it}/icones/appForeground.svg")
-    })
+    Provider<Directory> espolioDirProv = layout.settingsDirectory.dir(espNomeProv)
+    Provider<RegularFile> fundoSvgProv = espolioDirProv.map { it.file('icones/appBackground.svg') }
+    Provider<RegularFile> frenteSvgProv = espolioDirProv.map { it.file('icones/appForeground.svg') }
     Provider<RegularFile> pngArqProv = buildDirProv.file('generated/webIcoRes/static/favicon.png')
     
     inputs.files(fundoSvgProv, frenteSvgProv)
