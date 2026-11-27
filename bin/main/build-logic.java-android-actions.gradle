@@ -1,0 +1,275 @@
+// Declaração dos plugins
+// plugins {}
+// Atalhos para facilitar a leitura
+Provider<Map<String, String>> localPropsProv = providers.of(AuxiliarGeralLeitorDePropriedades) { 
+    String nomeArq = providers.gradleProperty('localPropertiesNome').getOrElse('local.properties')
+    parameters.propertiesFile.set(layout.settingsDirectory.file(nomeArq))
+}
+Provider<Map<String, String>> progPropsProv = providers.of(AuxiliarGeralLeitorDePropriedades) { 
+    String nomeArq = providers.gradleProperty('progPropertiesNome').getOrElse('programa.properties')
+    parameters.propertiesFile.set(layout.settingsDirectory.file(nomeArq))
+}
+// Limpa todo o diretório de build
+tasks.register('cleanAndroid') {
+    group = 'Android Actions'
+    description = 'Limpa os builds anteriores do Android'
+    outputs.upToDateWhen { false }
+    finalizedBy tasks.named('clean')
+}
+// Manipulação do arquivo .classpath para o VS Code parar de reclamar
+tasks.register('posBuild') {
+    group = 'Android Actions'
+    description = 'Sobereescreve o .classpath incluindo módulos e dependências'
+    mustRunAfter tasks.named('buildAndroid')
+    // captura todas as dependências de compilação Bibliotecas e Subprojetos
+    Provider<List<RegularFile>> bootClasspathProv = androidComponents.sdkComponents.bootClasspath
+    Provider<Directory> buildDirProv = project.layout.buildDirectory
+    Provider<RegularFile> classpathArqProv = providers.provider { 
+        project.layout.projectDirectory.file('.classpath') 
+    }
+
+    Closure<Provider<Set<FileSystemLocation>>> pegaDeps = { String nomeConfig ->
+        return configurations.named(nomeConfig).flatMap { Configuration config ->
+            config.incoming.artifactView { attributes {
+                attribute(Attribute.of('artifactType', String), 'android-classes-jar')
+            }}.files.elements
+        }
+    }
+
+    Provider<Set<FileSystemLocation>> compDepProv = pegaDeps('debugCompileClasspath')
+    Provider<Set<FileSystemLocation>> testDepProv = pegaDeps('debugUnitTestCompileClasspath')
+    Provider<Set<FileSystemLocation>> anddTestDepProv = pegaDeps('debugAndroidTestCompileClasspath')
+
+    inputs.files(compDepProv, testDepProv, anddTestDepProv)
+    inputs.file(classpathArqProv).optional()
+
+    doLast {
+        File classpathArq = classpathArqProv.get().asFile
+
+        if (classpathArq.exists() && classpathArq.canWrite()) {
+            List<RegularFile> bootArqs = bootClasspathProv.get()
+            String compDir = buildDirProv.get().asFile.absolutePath.replace(File.separator,'/')
+            String xmlArq = classpathArq.text
+            // String rDir = String.join('', compDir, '/intermediates/',
+            //     'compile_and_runtime_not_namespaced_r_class_jar/debug/processDebugResources/R.jar'
+            // )
+            StringBuilder novasBib = new StringBuilder()
+            // Lê o arquivo linha por linha e remove referências a arquivos que foram deletados
+            List<String> linhasLimpas = []
+            xmlArq.eachLine { String linha ->
+                if (linha.contains('kind=\"lib\"')) {
+                    java.util.regex.Matcher matcher = (linha =~ /path="([^"]+)"/)
+                    if (matcher.find()) {
+                        // Só mantém a linha se o arquivo realmente existir
+                        if (new File(matcher.group(1)).exists()) {
+                            linhasLimpas << linha
+                        }
+                    } else {
+                        linhasLimpas << linha
+                    }
+                } else {
+                    linhasLimpas << linha
+                }
+            }
+            xmlArq = linhasLimpas.join('\n')
+            // Injeção de pasta de código
+            if (!xmlArq.contains("path=\"src/main/java\"")) {
+                novasBib.append("    <classpathentry kind=\"src\" path=\"src/main/java\"/>\n")
+            }
+            // Injeção de pasta de código testes
+            if (!xmlArq.contains('path=\"src/test/java\"')) {
+                novasBib.append(
+                    '    <classpathentry kind=\"src\" output=\"bin/test\" ' + 
+                    'path=\"src/test/java\">\n' +
+                    '        <attributes>\n' +
+                    '            <attribute name=\"test\" value=\"true\"/>\n' +
+                    '        </attributes>\n' +
+                    '    </classpathentry>\n'
+                )
+            }
+            // Injeção de pasta de código androidTest
+            if (!xmlArq.contains('path=\"src/androidTest/java\"')) {
+                novasBib.append(
+                    '    <classpathentry kind=\"src\" output=\"bin/test\" ' +
+                    'path=\"src/androidTest/java\">\n' +
+                    '        <attributes>\n' +
+                    '            <attribute name=\"test\" value=\"true\"/>\n' +
+                    '        </attributes>\n' +
+                    '    </classpathentry>\n'
+                )
+            }
+
+            if (!bootArqs.isEmpty()) {
+                String andrdArqs = bootArqs.first().asFile.absolutePath.replace(File.separator,'/')
+                // Verifica se já existe no XML, se não, injeção
+                if (!xmlArq.contains(andrdArqs)) {
+                    novasBib.append("    <classpathentry kind=\"lib\" path=\"${andrdArqs}\"/>\n")
+                }
+            }
+            
+            // if (!xmlArq.contains(rDir)) {
+            //     novasBib.append("    <classpathentry kind=\"lib\" path=\"${rDir}\"/>\n")
+            // }
+            // Pega o JAR de qualquer outra lib que não virou AAR
+            Set<File> dependencias = new LinkedHashSet<>()
+            compDepProv.get().each { dependencias.add(it.asFile) }
+            testDepProv.get().each { dependencias.add(it.asFile) }
+            anddTestDepProv.get().each { dependencias.add(it.asFile) }
+            dependencias.each { File arq ->
+                String caminho = arq.absolutePath.replace(File.separator, '/')
+                // Filtra o que já é tratado pela pasta aarLibraries para evitar duplicar
+                if (caminho.endsWith('.jar') && !xmlArq.contains("path=\"${caminho}\"") 
+                    && !caminho.contains('/aarLibraries/')) {
+                    novasBib.append("    <classpathentry kind=\"lib\" path=\"${caminho}\"/>\n")
+                }
+            }
+            // Loop para encontrar todos os .jar de aarLibraries
+            File aarFolder = new File("${compDir}/aarLibraries")
+            if (aarFolder.exists()) {
+                aarFolder.eachFile { File arq ->
+                    if (arq.name.endsWith('.jar')) {
+                        String jarPath = arq.absolutePath.replace(File.separator, '/')
+                        if (!xmlArq.contains("path=\"${jarPath}\"")) {
+                            novasBib.append(
+                                "    <classpathentry kind=\"lib\" path=\"${jarPath}\"/>\n"
+                            )
+                        }
+                    }
+                }
+            }
+            // Gravação do arquivo
+            if (novasBib.length() > 0 || xmlArq != classpathArq.text) {
+                if (novasBib.length() > 0) {
+                    xmlArq = xmlArq.replace('</classpath>', "${novasBib.toString()}</classpath>")
+                }
+                classpathArq.text = xmlArq
+            }
+        }
+    }
+}
+// Compila o Android
+tasks.register('buildAndroid') {
+    group = 'Android Actions'
+    description = 'Compila o projeto Android (Debug e Release)'
+    mustRunAfter tasks.named('cleanAndroid')
+    finalizedBy tasks.named('posBuild')
+    inputs.files(tasks.named('assemble'))
+}
+// Instala o app no simulador e executa o app
+tasks.register('runSimulatorAndroid', Exec){
+    group = 'Android Actions'
+    description = 'Executa o simulador Android e instala o programa'
+    mustRunAfter tasks.named('installDebug')
+    outputs.upToDateWhen { false }
+
+    Provider<String> projNomeProv = progPropsProv.map { it.getOrDefault('projNome', 'Modelo') }
+    Provider<String> appIdProv = progPropsProv.map { it.getOrDefault('appIdPacote', 'com.modelo') }
+
+    executable = 'adb'
+    argumentProviders.add(new CommandLineArgumentProvider() {
+        @Input Provider<String> getProjNome() { projNomeProv }
+        @Input Provider<String> getAppId() { appIdProv }
+
+        @Override Iterable<String> asArguments() {
+            String pacote = getAppId().get() + '.'
+            String app = getProjNome().get().toLowerCase()
+            return ['shell', 'am', 'start', '-n', "${pacote}${app}/${pacote}app.MainActivity"]
+        }
+    })
+}
+// Inicia o primeiro emulador android encontrado
+tasks.register('runAndroid') {
+    group = 'Android Actions'
+    description = 'Executa o simulador Android e roda o programa'
+    finalizedBy tasks.named('installDebug')
+    finalizedBy tasks.named('runSimulatorAndroid')
+    inputs.files(tasks.named('buildAndroid'))
+    outputs.upToDateWhen { false } // sempre executa
+
+    Provider<String> simuladorProv = ( providers.exec {
+            commandLine 'emulator', '-list-avds'
+            ignoreExitValue = true 
+        }.standardOutput.asText.map { String saida ->
+            String texto = saida.trim()
+            // Se a saída estiver vazia o comando falhou silenciosamente ou não há AVDs
+            if (texto.isEmpty()) {
+                println 'AVISO: Nenhum AVD encontrado ou erro no comando. Usando padrão.'
+                return null // retornar null dispara o .orElse() abaixo
+            }
+            // Pega a primeira linha, primeiro simulador encontrado
+            return texto.lines().findFirst().map { it.trim() }.orElse(null)
+        }.orElse(providers.provider { localPropsProv.get().get('simulador.android') })
+    )
+
+    doFirst {
+        String simulador = simuladorProv.get()
+        if (!simulador) {
+            throw new GradleException('Nenhum simulador android disponível para execução')
+        }
+        String parametros = [
+            'emulator', '-avd', simulador, '-gpu', 'host', '-grpc', 'skip', '-grpc-use-jwt', 
+            '-no-boot-anim', '-no-metrics'
+        ].join(' ')
+        List<String> saidaFiltro = [
+            'Ignoring message',
+            'ignored',
+            'adb.exe: device offline',
+            'requires a signed jwt token',
+            'QMetaObject::connectSlotsByName: No matching signal',
+            'CPUID.01H:ECX.xsave',
+            'CPUID.01H:ECX.avx'
+        ]
+        // Detecção básica de SO para rodar o comando 'start' (Windows) ou '&' (Linux/Mac)
+        if (System.getProperty('os.name').toLowerCase().contains('windows')) {
+            String filtro = 'findstr /V ' + saidaFiltro.collect { 
+                "/${localPropsProv.get().getOrDefault('unidade.win', 'C')}:\"${it}\"" 
+            }.join(' ')
+            new ProcessBuilder(
+                'cmd', '/c', "start cmd /k \"${parametros} 2>&1 | ${filtro}\""
+            ).start()
+        } else {[
+            'sh', '-c', "${parametros} 2>&1 | grep -vE '${saidaFiltro.join('|')}' &"
+        ].execute() }
+        
+        ByteArrayOutputStream saidaStd = new ByteArrayOutputStream()
+        Process processoEspera = ['adb', 'wait-for-device'].execute()
+        processoEspera.waitForProcessOutput(saidaStd, System.err)
+
+        boolean eBootCompleto = false
+        int tentativas = 0
+        while (!eBootCompleto && tentativas < 150) { // tenta por 150 segundos
+            try {
+                saidaStd = new ByteArrayOutputStream()
+                [
+                    'adb', 'shell', 'getprop', 'sys.boot_completed'
+                ].execute().waitForProcessOutput(saidaStd, System.err) // pega saída e espera acabar
+
+                if (saidaStd.toString().trim() == '1') { eBootCompleto = true } 
+                else { sleep(1000) } // espera 1 segundo
+            } catch (Exception e) { sleep(1000) }
+            tentativas++
+        }
+    }
+}
+// Rodar todos os testes para Android
+tasks.register('testAndroid') {
+    group = 'Android Actions'
+    description = 'Roda apenas os testes unitários do Android.'
+    mustRunAfter tasks.named('installDebug')
+    mustRunAfter tasks.named('runSimulatorAndroid')
+    mustRunAfter tasks.named('runAndroid')
+    inputs.files(tasks.named('runAndroid'))
+    inputs.files(tasks.named('check'))
+    inputs.files(tasks.named('connectedCheck'))
+}
+
+tasks.matching { it.name == 'installDebug' }.configureEach {
+    mustRunAfter tasks.named('buildAndroid')
+}
+
+tasks.matching { it.name == 'connectedDebugAndroidTest' }.configureEach {
+    mustRunAfter tasks.named('installDebug')
+    mustRunAfter tasks.named('runSimulatorAndroid')
+}
+// Biblioteras para serem usadas no código
+// dependencies {}

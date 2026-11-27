@@ -1,0 +1,42 @@
+Provider<Map<String, String>> progPropsProv = providers.of(AuxiliarGeralLeitorDePropriedades) { 
+    String nomeArq = providers.gradleProperty('progPropertiesNome').getOrElse('programa.properties')
+    parameters.propertiesFile.set(layout.settingsDirectory.file(nomeArq))
+}
+// Define o diretório de build usando o nome dinâmico da pasta
+project.layout.buildDirectory.set(
+    layout.settingsDirectory.dir(progPropsProv.map { it.getOrDefault('buildDirCpp', 'build/cpp') })
+)
+// Declaração dos plugins da app
+// plugins {}
+plugins.apply(libs.plugins.buildLogicCppGeral.get().getPluginId()) // configurações do android
+plugins.apply(libs.plugins.buildLogicCppDesktopActions.get().getPluginId()) // ações de build
+
+Provider<String> projNomeProv = progPropsProv.map { it.getOrDefault('projNome', 'Modelo') }
+// Configurações da aplicação
+application {
+    baseName.set(projNomeProv) // nome do produto gerado
+    // Máquinas que o Gradle vai se dispor a criar aplicativos
+    targetMachines = [
+        machines.linux.x86, machines.linux.x86_64, // linux
+        machines.windows.x86, machines.windows.x86_64 // windows
+    ]
+    // Configura os diretórios de código-fonte e cabeçalhos para o build local
+    source.from fileTree(dir: 'src/main/cpp', include: '**/*.cpp')
+    source.from fileTree(dir: 'src/main/bib/cpp', include: '**/*.cpp')
+    
+    privateHeaders.from 'src/main/headers'
+    
+    File bibBase = file('src/main/bib')
+    if (bibBase.exists()) {
+        privateHeaders.from(bibBase) // Adiciona a raiz do bib
+        bibBase.eachDirRecurse { subPasta ->
+            privateHeaders.from(subPasta) // Adiciona cada subpasta encontrada dinamicamente
+        }
+    }
+}
+// Configuração dos Testes
+unitTest {
+    baseName.set(projNomeProv.map { "${it}Test" }) // nome do produto de tests gerado
+}
+// Biblioteras para serem usadas no código
+// dependencies {}

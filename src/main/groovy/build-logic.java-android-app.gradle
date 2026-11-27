@@ -1,0 +1,185 @@
+// Declaração dos plugins
+// plugins {}
+// Atalhos para libs.versions.toml para facilitar a leitura
+Object ver = libs.versions
+Provider<Map<String, String>> progPropsProv = providers.of(AuxiliarGeralLeitorDePropriedades) { 
+    String nomeArq = providers.gradleProperty('progPropertiesNome').getOrElse('programa.properties')
+    parameters.propertiesFile.set(layout.settingsDirectory.file(nomeArq))
+}
+// Define o diretório de build usando o nome dinâmico da pasta
+project.layout.buildDirectory.set(project.layout.dir( progPropsProv.map { 
+    new File(project.rootDir, it.getOrDefault('buildDirAndroid', 'build/java/android')) 
+}))
+// Declaração dos plugins
+plugins.apply(libs.plugins.buildLogicJavaGeral.get().getPluginId())
+plugins.apply(libs.plugins.buildLogicJavaAndroidActions.get().getPluginId())
+// Provedores de configuração
+Provider<Directory> espolioDirProv = project.layout.dir( progPropsProv.map { 
+    new File(project.rootDir, it.getOrDefault('espolioDir', 'espolio')) 
+})
+Provider<String> projNomeProv = progPropsProv.map { it.getOrDefault('projNome', 'Modelo') }
+Provider<String> idPacoteProv = progPropsProv.map { it.getOrDefault('appIdPacote', 'com.modelo') }
+Provider<String> mainPacoteProv = progPropsProv.map { it.getOrDefault('javaMainPacote', '.app') }
+Provider<String> testPacoteProv = progPropsProv.map { it.getOrDefault('javaTestPacote', '.test') }
+Provider<String> verNomeProv = progPropsProv.map { it.getOrDefault('appVerNome', '0.0.1') }
+Provider<String> verNumProv = progPropsProv.map { it.getOrDefault('appVerNum', '1') }
+// Definição das características do aplicativo Android
+android {
+    // ids para pacotes do app e testes
+    namespace = idPacoteProv.get().concat(mainPacoteProv.get())
+    testNamespace = idPacoteProv.get().concat(testPacoteProv.get())
+    // Configurações padrão para o aplicativo Android
+    defaultConfig {
+        applicationId "${idPacoteProv.get()}.${projNomeProv.get().toLowerCase()}" // id aplicativo
+        minSdk = ver.sdkMin.get().toInteger() // compatibilidade APIs do Android
+        targetSdk = ver.sdkTarget.get().toInteger() // versão Android mínima
+        compileSdk = ver.sdkCompile.get().toInteger() // versão Android principal
+        versionCode verNumProv.get().toInteger() // versão de registro no Google Play
+        versionName verNomeProv.get() // nome da versão em exibição
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+    }
+    // Versão java para compilar o código e manter a compatibilidade
+    compileOptions {
+        sourceCompatibility = JavaVersion.toVersion(ver.javaSource.get())
+        targetCompatibility = JavaVersion.toVersion(ver.javaTarget.get())
+    }
+    // Configurações do lint
+    lint {
+        baseline = file('lint-baseline.xml')
+        // Habilita verificações desativadas por padrão
+        enable += [
+            'WrongThread',
+            'WrongThreadInterprocedural',
+            'StopShip',
+            'LogConditional',
+            'ConvertToWebp',
+            'UnknownNullness'
+        ]
+
+        warningsAsErrors = true // build falha caso uma dessas regras seja quebrada
+        checkDependencies = false // mantém o build rápido
+    }
+    // Define o local do código para o android
+    sourceSets {
+        // Código principal, androidx usa res, mas o gradle cria resources
+        main {
+            res.srcDirs = ['src/main/resources'] // recursos .xml do código
+            assets.srcDirs += [espolioDirProv] // recursos gerais
+        }
+        // Códigos de teste
+        test {
+            res.srcDirs = ['src/test/resources'] // recursos .xml dos códigos de teste
+            assets.srcDirs += [espolioDirProv] // recursos gerais
+        }
+    }
+    // Configuração para usar Junit
+    testOptions {
+        unitTests {
+            all {
+                // Resolve warnings do Java 21+ e Mockito
+                jvmArgs(
+                    '-Xshare:off', // desliga o cache compartilhado 
+                    '-XX:+EnableDynamicAgentLoading' // adiciona o Mockito como agente de build
+                )
+                // Melhora a saída do log no terminal
+                testLogging {
+                    events = ['passed', 'skipped', 'failed'] // eventos que devem gerar mesagens
+                    exceptionFormat = 'full' // mostra o stacktrace completo do erro
+                    showStandardStreams = true // redireciona tuda saída de código para o terminal
+                }
+
+                useJUnitPlatform() // habilita JUnit
+            }
+
+            returnDefaultValues = true // não quebrar ao acessar classes do SDK
+        }
+    }
+
+    bundle {
+        abi {
+            enableSplit = true // gera pacotes menores específicos para cada processador
+        }
+    }
+    // Controle sobre compilaação
+    buildFeatures {
+        buildConfig = false
+        viewBinding = false // ativa a view binding para melhorar as views do aplicativo
+    }
+    // Controle de assinatura para distribuição
+    signingConfigs {
+        debug {
+            // Usa as credenciais padrão do SDK
+            storeFile = file("${System.getProperty('user.home')}/.android/debug.keystore")
+            storePassword = 'android'
+            keyAlias = 'androiddebugkey'
+            keyPassword = 'android'
+        }
+    }
+    // Controle de builds para o aplicativo
+    buildTypes {
+        // Regras para a release do aplicativo
+        release {
+            minifyEnabled = true
+            shrinkResources = true
+            signingConfig = signingConfigs.debug
+            proguardFiles getDefaultProguardFile(
+                'proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        // Regras para a debug do aplicativo
+        debug {
+            minifyEnabled = false
+            shrinkResources = false
+        }
+    }
+}
+// Configuração para o nome dinâmico do apk
+androidComponents {
+    onVariants(selector().all()) { variante -> // com.android.build.api.variant.Variant
+        variante.outputs.forEach { output -> // com.android.build.api.variant.VariantOutput
+            // Só calcula isso no exato milissegundo em que for gerar o APK
+            output.outputFileName.set(
+                output.versionCode.map { "${projNomeProv.get()}-${it}-${variante.name}.apk" }
+            )
+        }
+    }
+}
+// Configuração de log dos testes unitários
+tasks.withType(Test).configureEach {
+    outputs.upToDateWhen { false }
+
+    testLogging {
+        // Mostra no terminal os testes que passaram, foram pulados ou falharam
+        events 'passed', 'skipped', 'failed'
+        showStandardStreams = false // saída padrão do console
+        // Se der erro, mostra o rastro completo do problema
+        exceptionFormat = 'full'
+        showCauses = true
+        showStackTraces = true
+    }
+}
+// Biblioteras para serem usadas no código
+dependencies {
+    androidTestImplementation libs.adrxTestCore // conversa com o Android
+    androidTestImplementation libs.adrxTestEspresso // framework do Andoird para testes
+    androidTestImplementation libs.adrxTestExtJunit // empacota tudo isso e manda o executor do Java
+    androidTestImplementation libs.adrxTestRules // cria atalhos fáceis para abrir 
+    testImplementation libs.junitAPI // api dp Junit 5
+    testRuntimeOnly libs.junitEngine // engine do Junit 5
+    testRuntimeOnly libs.junitPlt // necessário
+}
+// Bloqueio de Kotlin nas configurações de produção
+configurations.matching {
+    it.name in [
+        'debugCompileClasspath', 'debugRuntimeClasspath',
+        'releaseCompileClasspath', 'releaseRuntimeClasspath'
+    ]
+}.configureEach {
+    exclude group: 'org.jetbrains.kotlin'
+    exclude group: 'org.jetbrains.kotlinx'
+
+    resolutionStrategy.eachDependency { DependencyResolveDetails det ->
+        if (det.requested.group in ['org.jetbrains.kotlin', 'org.jetbrains.kotlinx']) {
+            throw new GradleException("Dependência Kotlin proibida em produção: ${det.requested}")
+        }
+    }
+}
