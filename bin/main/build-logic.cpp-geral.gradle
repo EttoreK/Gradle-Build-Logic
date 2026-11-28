@@ -7,7 +7,7 @@ Provider<Map<String, String>> localPropsProv = providers.of(AuxiliarGeralLeitorD
 // Configuração das ferramentas de compilação. Garante o uso do compilador correto
 toolChains {
     // Diz para o Gradle procurar especificamente pelo Gcc
-    if (System.getProperty('os.name').toLowerCase().contains('windows')) {
+    if (providers.systemProperty('os.name').get().toLowerCase().contains('windows')) {
         String msysDir = "${localPropsProv.get().getOrDefault('unidade.win', 'C')}:/msys64"
 
         visualCpp(VisualCpp)
@@ -19,5 +19,5 @@ toolChains {
 
     gcc(Gcc) // generalizado, funciona para windows e linux, 64 e 32
 }
-// Biblioteras para serem usadas no código
+// Bibliotecas para serem usadas no código
 // dependencies {}

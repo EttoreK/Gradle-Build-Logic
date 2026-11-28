@@ -2,21 +2,36 @@
 // plugins {}
 // Provedores para acesso lazy às variáveis
 Object ver = libs.versions
-// Configurações Java para compilaçõa
+// Configurações Java para compilação
 java {
     // Versão java para compilar o código e manter a compatibilidade
     sourceCompatibility = JavaVersion.toVersion(ver.javaSource.get())
     targetCompatibility = JavaVersion.toVersion(ver.javaTarget.get())
-    // Garante qeu o java que compila seja o definido
+    // Garante que o java que compila seja o definido
     toolchain {
         languageVersion = JavaLanguageVersion.of(ver.javaSource.get().toInteger())
     }
 }
-// Biblioteras para serem usadas no código
+// Bibliotecas para serem usadas no código
 dependencies {
     compileOnly libs.jetBsAnnot // biblioteca padrão para @Nullable e @NotNull
     testImplementation libs.mockitoCore // para usar o mockito
     testImplementation libs.mockitoJunit // para mockar métodos estáticos
+}
+// Bloqueio de Kotlin nos classpaths da aplicação e testes
+configurations.matching {
+    it.name in [
+        'compileClasspath', 'runtimeClasspath', 'testCompileClasspath', 'testRuntimeClasspath'
+    ]
+}.configureEach {
+    exclude group: 'org.jetbrains.kotlin'
+    exclude group: 'org.jetbrains.kotlinx'
+
+    resolutionStrategy.eachDependency { DependencyResolveDetails det ->
+        if (det.requested.group in ['org.jetbrains.kotlin', 'org.jetbrains.kotlinx']) {
+            throw new GradleException("Dependência Kotlin proibida detectada: ${det.requested}")
+        }
+    }
 }
 // Aplica o tipo de teste como JUnit
 tasks.withType(Test).configureEach { 

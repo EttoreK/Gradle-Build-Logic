@@ -1,0 +1,522 @@
+// Provedores de propriedades
+Provider<Map<String, String>> localPropsProv = providers.of(AuxiliarGeralLeitorDePropriedades) {
+    String nomeArq = providers.gradleProperty('localPropertiesNome').getOrElse('local.properties')
+    parameters.propertiesFile.set(layout.settingsDirectory.file(nomeArq))
+}
+Provider<Map<String, String>> progPropsProv = providers.of(AuxiliarGeralLeitorDePropriedades) {
+    String nomeArq = providers.gradleProperty('progPropertiesNome').getOrElse('programa.properties')
+    parameters.propertiesFile.set(layout.settingsDirectory.file(nomeArq))
+}
+Provider<Map<String, String>> secretoPropsProv = providers.of(AuxiliarGeralLeitorDePropriedades) {
+    String nomeArq = providers.gradleProperty('scrtPropertiesNome').getOrElse('secreto.properties')
+    parameters.propertiesFile.set(layout.settingsDirectory.file(nomeArq))
+}
+// Provedores de diretórios e ambiente
+Provider<Directory> projDirProv = objects.directoryProperty().convention(layout.projectDirectory)
+Provider<Directory> srcDirProv = projDirProv.map { it.dir('src') }
+Provider<String> cppStdProv = progPropsProv.map { it.getOrDefault('cppStd', 'c++26') }
+Provider<String> cppEntregaOProv = progPropsProv.map {
+    it.get('cppEntregaWebO') ?: it.getOrDefault('cppEntregaO', '-O2')
+}
+Provider<Directory> buildDirProv = layout.buildDirectory
+Provider<Directory> deployDirProv = buildDirProv.dir('distributions')
+Provider<Directory> instllDirProv = buildDirProv.dir('install')
+Provider<Directory> genDirProv = buildDirProv.dir('tmp/generated')
+Provider<Boolean> eWindowsProv = providers.systemProperty('os.name').map {
+    it.toLowerCase().contains('windows')
+}
+Provider<Boolean> eLinuxProv = providers.systemProperty('os.name').map {
+    it.toLowerCase().contains('linux')
+}
+Provider<String> appNomeProv = progPropsProv.map { it.getOrDefault('projNome', 'Modelo') }
+Provider<String> astNomeProv = progPropsProv.map { it.getOrDefault('asseiosDir', 'asseios') }
+Provider<String> webPortaProv = progPropsProv.map { it.getOrDefault('webPorta', '8080') }
+Provider<String> linDonoProv = localPropsProv.map { it.get('lin.dono') }
+Provider<String> linSedeProv = localPropsProv.map { it.get('lin.sede') }
+Provider<String> linWebDirProv = localPropsProv.map { Map<String, String> props ->
+    String dirWeb = props.get('lin.web.dir')
+    if (dirWeb) { return dirWeb }
+    String dirBase = props.get('lin.dir')
+    return dirBase ? "${dirBase}Web" : null
+}
+Provider<String> winDiscProv = localPropsProv.map { it.getOrDefault('unidade.win', 'C') }
+Provider<Directory> asseiosDirProv = layout.settingsDirectory.dir(astNomeProv)
+// Delegação para AuxiliarCppRecursosExternos.comandoRemoto
+Closure<List<String>> comandoRemoto = { String os, List<String> entradaCmds, String extDir = null ->
+    return AuxiliarCppRecursosExternos.comandoRemoto(
+        eWindowsProv.get(), eLinuxProv.get(), os, entradaCmds, projDirProv.get().asFile,
+        os == 'linux' ? linDonoProv.orNull : null,
+        os == 'linux' ? linSedeProv.orNull : null,
+        os == 'linux' ? linWebDirProv.orNull : null,
+        extDir
+    )
+}
+// Coleta as flags de compilação 
+Closure<List<String>> pegaFlamasCompWeb = { String alvo, String arqtt, String config, Boolean eRemot 
+    ->
+    List<String> extras = ['-DASIO_STANDALONE']
+    if (alvo.toLowerCase() == 'linux') { extras << '-I/usr/include/jsoncpp' }
+    if (alvo.toLowerCase() == 'windows') {
+        extras.addAll(['-D_WIN32_WINNT=0x0A00', '-DWIN32_LEAN_AND_MEAN'])
+    }
+
+    return AuxiliarCppRecursosExternos.pegaFlamasComp(
+        projDirProv.get().asFile,
+        genDirProv.get().asFile,
+        alvo, arqtt, config, eRemot, eWindowsProv.get(),
+        cppStdProv.get(),
+        config == 'Release' ? cppEntregaOProv.get() : null,
+        extras
+    )
+}
+
+// Coleta as flamas de linkagem separadas em estáticas e dinâmicas
+Closure<List<String>> pegaFlamasLinkWeb = { String alvo, String arqtt, String config, Boolean eTeste 
+    ->
+    String osAlvo = alvo.toLowerCase()
+    List<String> flamasEstaticas = []
+    List<String> flamasDinamicas = []
+
+    if (osAlvo == 'windows') {
+        flamasEstaticas = ['-ljsoncpp', '-lssl', '-lcrypto', '-lz']
+        flamasDinamicas = ['-lws2_32', '-lmswsock', '-lcrypt32', '-lbcrypt']
+        if (eTeste) { flamasDinamicas.addAll(['-lgtest', '-lgtest_main', '-lpthread']) }
+    } else if (osAlvo == 'linux') {
+        if (eTeste) { flamasDinamicas.addAll(['-lgtest', '-lgtest_main']) }
+        flamasDinamicas.addAll(['-ljsoncpp', '-lssl', '-lcrypto'])
+    }
+
+    return AuxiliarCppRecursosExternos.pegaFlamasLink(
+        alvo, arqtt, config, flamasEstaticas, flamasDinamicas
+    )
+}
+// Embute os recursos de asseios e favicon.png e gera propriedades.hpp
+tasks.register('criaAsseios') {
+    group = 'C++ Web Setup'
+    description = 'Converte os recursos de asseios e propriedades em headers para o servidor Web'
+
+    Provider<String> chaveConfProv = secretoPropsProv.map {
+        it.getOrDefault('APP_CHAVE_CONF', 'CHAVE_FALTANDO')
+    }
+    Provider<String> appVerNomeProv = progPropsProv.map {
+        it.getOrDefault('appVerNome', 'appVerNome não encontrado')
+    }
+
+    inputs.dir asseiosDirProv
+    inputs.property('appChaveConf', chaveConfProv)
+    inputs.property('appVerNome', appVerNomeProv)
+    inputs.property('webPorta', webPortaProv)
+    outputs.file(genDirProv.zip(astNomeProv) { Directory dir, String nome ->
+        dir.file("${nome}.hpp")
+    })
+    outputs.file(genDirProv.map { it.file('propriedades.hpp') })
+
+    doFirst {
+        AuxiliarCppRecursosExternos.geraFavicon(
+            asseiosDirProv.get().asFile,
+            genDirProv.get().asFile,
+            eWindowsProv.get(),
+            winDiscProv.get()
+        )
+    }
+
+    doLast {
+        AuxiliarCppRecursosExternos.embuteRes(
+            asseiosDirProv.get().asFile,
+            genDirProv.get().asFile,
+            astNomeProv.get()
+        )
+        AuxiliarCppRecursosExternos.geraPropriedadesHpp(
+            genDirProv.get().asFile,
+            [
+                APP_CHAVE_CONF: chaveConfProv.get(),
+                APP_VER_NOME  : appVerNomeProv.get(),
+                APP_WEB_PORTA : webPortaProv.get().toInteger()
+            ]
+        )
+    }
+}
+// Sincroniza fontes e headers gerados do servidor Web para a VM Linux
+tasks.register('syncToLinuxWeb') {
+    group = 'Web Actions'
+    description = 'Sincroniza os fontes do servidor C++ Web para a VM Linux via SSH'
+    onlyIf { eWindowsProv.get() }
+
+    mustRunAfter tasks.named('criaAsseios')
+    inputs.files(tasks.named('criaAsseios'))
+    inputs.dir srcDirProv
+    inputs.dir asseiosDirProv
+    outputs.upToDateWhen { true }
+
+    doFirst {
+        Process procDir = comandoRemoto(
+            'linux', ['mkdir', '-p', "${linWebDirProv.get()}/build/tmp"]
+        ).execute()
+        procDir.waitForProcessOutput(System.out, System.err)
+        if (procDir.exitValue() != 0) {
+            throw new GradleException('Falha ao preparar diretórios C++ Web na VM Linux!')
+        }
+    }
+
+    doLast {
+        String sshAcesso = "${linDonoProv.get()}@${linSedeProv.get()}"
+        String base = linWebDirProv.get()
+        Directory projDir = projDirProv.get()
+
+        println '>> INFO: [Linux Web] Enviando arquivos fonte e recursos...'
+        Process procSrc = (['scp', '-r', '-p',
+            projDir.dir('src').asFile.absolutePath.replace(File.separator, '/'),
+            asseiosDirProv.get().asFile.absolutePath.replace(File.separator, '/'),
+            "${sshAcesso}:${base}/"
+        ]).execute(null, projDir.asFile)
+        procSrc.waitForProcessOutput(System.out, System.err)
+        if (procSrc.exitValue() != 0) { 
+            throw new GradleException('Falha no upload dos fontes Web!') 
+        }
+
+        println '>> INFO: [Linux Web] Enviando headers gerados...'
+        Process procGen = (['scp', '-r', '-p',
+            genDirProv.get().asFile.absolutePath.replace(File.separator, '/'),
+            "${sshAcesso}:${base}/build/tmp/"
+        ]).execute(null, projDir.asFile)
+        procGen.waitForProcessOutput(System.out, System.err)
+        if (procGen.exitValue() != 0) { 
+            throw new GradleException('Falha no upload dos headers gerados!') 
+        }
+
+        println '>> INFO: Sincronização C++ Web para Linux concluída!'
+    }
+}
+// Centralização de compilação do servidor C++ Web (64-bit)
+Closure<Void> cbuildWeb = { Task tarefa, String alvo, String config ->
+    String osAlvo = alvo.toLowerCase()
+    String appDir = "main/${config}/${osAlvo}/x86-64/lib"
+    boolean eRemoto = (osAlvo == 'linux' && eWindowsProv.get())
+
+    tarefa.group = 'Web Actions'
+    tarefa.description = "Compila o servidor C++ Web (${alvo} ${config})"
+    tarefa.mustRunAfter tasks.named('criaAsseios')
+    tarefa.inputs.dir(srcDirProv.map { it.dir('main') })
+    tarefa.inputs.dir(genDirProv)
+    if (eRemoto) {
+        tarefa.inputs.files(tasks.named('syncToLinuxWeb'))
+    } else {
+        tarefa.inputs.files(tasks.named('criaAsseios'))
+    }
+
+    Provider<RegularFile> saidaLocalProv = (osAlvo == 'linux' && config == 'Release')
+        ? deployDirProv.zip(appNomeProv) { 
+            Directory dir, String nome -> dir.file(nome.toLowerCase()) 
+        }
+        : instllDirProv.zip(appNomeProv) { Directory dir, String nome ->
+            String nomeExe = osAlvo == 'windows' ? "${nome}Web.exe" : "${nome}Web"
+            dir.file("${appDir}/${nomeExe}")
+        }
+    tarefa.outputs.file(saidaLocalProv)
+
+    tarefa.doLast {
+        Directory projDir = projDirProv.get()
+        List<String> gppFlamas = []
+
+        if (osAlvo == 'windows') {
+            gppFlamas << "${winDiscProv.get()}:/msys64/ucrt64/bin/g++.exe"
+        } else {
+            gppFlamas << 'g++'
+        }
+
+        gppFlamas.addAll(pegaFlamasCompWeb(alvo, 'X86-64', config, eRemoto))
+        gppFlamas.addAll(AuxiliarCppRecursosExternos.coletaFontesCpp(projDir.asFile))
+        gppFlamas.addAll(pegaFlamasLinkWeb(alvo, 'X86-64', config, false))
+
+        File saidaLocal = saidaLocalProv.get().asFile
+        String saidaComp
+        if (eRemoto) {
+            String dirRemoto = "build/install/${appDir}"
+            Process procMk = comandoRemoto('linux', ["mkdir -p '${dirRemoto}'"]).execute()
+            procMk.waitForProcessOutput(System.out, System.err)
+            saidaComp = "${dirRemoto}/${saidaLocal.name}"
+        } else {
+            saidaLocal.parentFile.mkdirs()
+            saidaComp = saidaLocal.absolutePath.replace('\\', '/')
+        }
+        gppFlamas << '-o' << "\"${saidaComp}\""
+
+        println ">> INFO: Compilando C++ Web [${alvo}-${config}]..."
+        String dirDireto = (eWindowsProv.get() && osAlvo == 'windows')
+            ? "${winDiscProv.get()}:/msys64/ucrt64/bin"
+            : null
+        Process procComp = comandoRemoto(osAlvo, [gppFlamas.join(' ')], dirDireto).execute()
+        procComp.waitForProcessOutput(System.out, System.err)
+        if (procComp.exitValue() != 0) {
+            throw new GradleException("Falha na compilação do C++ Web [${alvo}-${config}]")
+        }
+        // Se compilou na VM Linux a partir do Windows, traz o binário para distributions/ local
+        if (eRemoto) {
+            saidaLocal.parentFile.mkdirs()
+            String sshAcesso = "${linDonoProv.get()}@${linSedeProv.get()}"
+            String base = linWebDirProv.get()
+            Process procPull = ([
+                'scp', '-p',
+                "${sshAcesso}:${base}/${saidaComp}",
+                saidaLocal.absolutePath.replace('\\', '/')
+            ]).execute(null, projDir.asFile)
+            procPull.waitForProcessOutput(System.out, System.err)
+            if (procPull.exitValue() != 0) {
+                throw new GradleException('Falha ao baixar o binário Linux Web da VM!')
+            }
+        }
+
+        println ">> INFO: Sucesso! Binário C++ Web salvo em: ${saidaLocal.absolutePath}"
+    }
+}
+// Tarefas de compilação
+tasks.register('buildWeb') { cbuildWeb(it, eWindowsProv.get() ? 'Windows' : 'Linux', 'Debug') }
+tasks.register('buildWebWin64Release') {
+    cbuildWeb(it, eWindowsProv.get() ? 'Windows' : 'Linux', 'Release')
+}
+tasks.register('buildWebLin64Release') { cbuildWeb(it, 'Linux', 'Release') }
+// Executa o servidor C++ Web localmente em terminal separado
+tasks.register('runWeb') {
+    group = 'Web Actions'
+    description = 'Executa o servidor C++ Web localmente'
+    mustRunAfter tasks.named('buildWeb')
+    inputs.files(tasks.named('buildWeb'))
+    outputs.upToDateWhen { false }
+
+    doLast {
+        String osLocal = eWindowsProv.get() ? 'windows' : 'linux'
+        String nomeExe = eWindowsProv.get() 
+            ? "${appNomeProv.get()}Web.exe" : "${appNomeProv.get()}Web"
+        File exeArq = new File(
+            instllDirProv.get().asFile, "main/debug/${osLocal}/x86-64/lib/${nomeExe}"
+        )
+
+        if (!exeArq.exists()) {
+            throw new GradleException("Binário C++ Web não encontrado em: ${exeArq.absolutePath}")
+        }
+
+        ProcessBuilder pb
+        if (eWindowsProv.get()) {
+            pb = new ProcessBuilder('cmd', '/c', 'start', 'cmd', '/k', exeArq.name)
+            pb.environment().put(
+                'PATH', 
+                "${winDiscProv.get()}:/msys64/ucrt64/bin" 
+                    + File.pathSeparator + pb.environment().get('PATH')
+            )
+        } else {
+            pb = new ProcessBuilder('sh', '-c', "./\"${exeArq.name}\" &")
+        }
+        pb.directory(exeArq.parentFile)
+        pb.start()
+
+        println ">> INFO: Aplicação C++ Web disponível em http://localhost:${webPortaProv.get()}"
+    }
+}
+// Compila e executa os testes unitários do servidor C++ Web
+tasks.register('testWeb') {
+    group = 'Web Actions'
+    description = 'Compila e executa os testes unitários do servidor C++ Web'
+    mustRunAfter tasks.named('criaAsseios')
+    inputs.files(tasks.named('criaAsseios'))
+    inputs.dir(srcDirProv.map { it.dir('main') })
+    inputs.dir(srcDirProv.map { it.dir('test') })
+    outputs.upToDateWhen { false }
+
+    doLast {
+        String alvo = eWindowsProv.get() ? 'Windows' : 'Linux'
+        String osAlvo = alvo.toLowerCase()
+        Directory projDir = projDirProv.get()
+        File testDir = new File(instllDirProv.get().asFile, "test/${osAlvo}/x86-64/lib")
+        testDir.mkdirs()
+
+        String nomeExe = eWindowsProv.get() 
+            ? "${appNomeProv.get()}WebTest.exe" : "${appNomeProv.get()}WebTest"
+        File exeTestArq = new File(testDir, nomeExe)
+
+        List<String> fontes = []
+        ['src/main/cpp', 'src/main/bib/cpp', 'src/test/cpp'].each { String sub ->
+            File pasta = new File(projDir.asFile, sub)
+            if (pasta.exists()) {
+                pasta.eachFileRecurse(groovy.io.FileType.FILES) { File arq ->
+                    if (arq.name.endsWith('.cpp') && arq.name != 'app.cpp' && arq.name != 'main.cpp'
+                    ) {
+                        fontes << projDir.asFile.toPath().relativize(
+                            arq.toPath()
+                        ).toString().replace(File.separator, '/')
+                    }
+                }
+            }
+        }
+
+        List<String> gppCmd = [
+            eWindowsProv.get() ? "${winDiscProv.get()}:/msys64/ucrt64/bin/g++.exe" : 'g++'
+        ]
+        gppCmd.addAll(pegaFlamasCompWeb(alvo, 'X86-64', 'Debug', false))
+        gppCmd.addAll(fontes)
+        gppCmd.addAll(pegaFlamasLinkWeb(alvo, 'X86-64', 'Debug', true))
+        gppCmd << '-o' << "\"${exeTestArq.absolutePath.replace('\\', '/')}\""
+
+        String dirDireto = eWindowsProv.get() ? "${winDiscProv.get()}:/msys64/ucrt64/bin" : null
+        Process procComp = comandoRemoto(osAlvo, [gppCmd.join(' ')], dirDireto).execute()
+        procComp.waitForProcessOutput(System.out, System.err)
+        if (procComp.exitValue() != 0) {
+            throw new GradleException('Falha ao compilar os testes C++ Web!')
+        }
+
+        List<String> runCmd = eWindowsProv.get()
+            ? ["cd /d \"${testDir.absolutePath}\"", '&&', nomeExe]
+            : ["cd '${testDir.absolutePath}'", '&&', "./${nomeExe}"]
+        Process procTest = comandoRemoto(osAlvo, runCmd, dirDireto).execute()
+        procTest.waitForProcessOutput(System.out, System.err)
+        if (procTest.exitValue() != 0) {
+            throw new GradleException('Os testes unitários do C++ Web falharam.')
+        }
+    }
+}
+// Limpa builds locais e da VM Linux do servidor C++ Web
+tasks.register('cleanWeb') {
+    group = 'Web Actions'
+    description = 'Limpa os diretórios de build do C++ Web localmente e na VM Linux'
+    outputs.upToDateWhen { false }
+
+    doLast {
+        File dirLocal = buildDirProv.get().asFile
+        if (dirLocal.exists()) {
+            println '>> INFO: [Local] Limpando diretório de build C++ Web...'
+            dirLocal.deleteDir()
+        }
+        if (eWindowsProv.get() && linWebDirProv.isPresent()) {
+            try {
+                println '>> INFO: [Linux Web] Limpando diretório remoto via SSH...'
+                comandoRemoto('linux', ["rm -rf '${linWebDirProv.get()}/build'"])
+                    .execute().waitForProcessOutput(System.out, System.err)
+            } catch (Exception e) {
+                println '>> AVISO: Não foi possível limpar a VM Linux. Ela pode estar desligada.'
+            }
+        }
+    }
+}
+// Envia o binário Linux Release para o servidor de produção
+tasks.register('submitWeb') {
+    group = 'Deploy Actions'
+    description = 'Envia o binário C++ Web (Linux x86_64) para o servidor remoto via SSH/SCP'
+    mustRunAfter tasks.named('buildWebLin64Release')
+    inputs.files(tasks.named('buildWebLin64Release'))
+    outputs.upToDateWhen { false }
+
+    doLast {
+        String dono = secretoPropsProv.get().get('srv.dono')
+        String sede = secretoPropsProv.get().get('srv.sede')
+        String dir = secretoPropsProv.get().get('srv.cpp.dir') 
+            ?: secretoPropsProv.get().get('srv.dir')
+        String servico = secretoPropsProv.get().get('srv.cpp.servico') 
+            ?: secretoPropsProv.get().get('srv.servico')
+        String binNome = appNomeProv.get().toLowerCase()
+
+        if (!dono || !sede || !dir) {
+            throw new GradleException('Faltam variáveis do servidor no secreto.properties!')
+        }
+
+        File binLocal = new File(deployDirProv.get().asFile, binNome)
+        if (!binLocal.exists()) {
+            throw new GradleException("Binário Linux não encontrado em: ${binLocal.absolutePath}")
+        }
+
+        // Calcula MD5 local e compara com o binário remoto
+        java.security.MessageDigest md = java.security.MessageDigest.getInstance('MD5')
+        binLocal.eachByte(8192) { byte[] buf, int len -> md.update(buf, 0, len) }
+        String md5Local = md.digest().encodeHex().toString()
+
+        ByteArrayOutputStream saidaHash = new ByteArrayOutputStream()
+        ByteArrayOutputStream erroHash = new ByteArrayOutputStream()
+        Process procHash = [
+            'ssh', '-o', 'StrictHostKeyChecking=no', "${dono}@${sede}",
+            "md5sum '${dir}/${binNome}' 2>/dev/null | awk '{print \$1}' || true"
+        ].execute()
+        procHash.waitForProcessOutput(saidaHash, erroHash)
+        String md5Remoto = saidaHash.toString().trim()
+
+        if (md5Local == md5Remoto) {
+            println '>> INFO: Binário C++ Web idêntico ao do servidor. Nada a enviar!'
+            return
+        }
+
+        println ">> INFO: Enviando '${binNome}' (${(binLocal.length() / 1024).toInteger()} KB)..."
+        Process procMk = [
+            'ssh', '-o', 'StrictHostKeyChecking=no', "${dono}@${sede}", "mkdir -p '${dir}'"
+        ].execute()
+        procMk.waitForProcessOutput(System.out, System.err)
+        // Envia para arquivo temporário e substitui atomicamente
+        Process procScp = [
+            'scp', '-o', 'StrictHostKeyChecking=no',
+            binLocal.absolutePath,
+            "${dono}@${sede}:${dir}/${binNome}.novo"
+        ].execute()
+        procScp.waitForProcessOutput(System.out, System.err)
+        if (procScp.exitValue() != 0) {
+            throw new GradleException("Falha ao transferir binário: ${binNome}")
+        }
+
+        String cmdTroca = "chmod +x '${dir}/${binNome}.novo' && mv -f '${dir}/${binNome}.novo' '${dir}/${binNome}'"
+        if (servico) { cmdTroca += " && systemctl restart ${servico}" }
+
+        Process procAtiva = [
+            'ssh', '-o', 'StrictHostKeyChecking=no', "${dono}@${sede}", cmdTroca
+        ].execute()
+        procAtiva.waitForProcessOutput(System.out, System.err)
+        if (procAtiva.exitValue() != 0) {
+            throw new GradleException('Falha ao ativar binário ou reiniciar o serviço no servidor!')
+        }
+
+        println '>> INFO: Deploy C++ Web concluído e serviço reiniciado!'
+    }
+}
+// Instala dependências do servidor Web
+tasks.register('instalaDeps') {
+    group = 'C++ Web Setup'
+    description = 'Instala dependências do servidor Web no MSYS2 (Windows) e apt (Linux)'
+    outputs.upToDateWhen { false }
+
+    doLast {
+        List<String> winDeps = eWindowsProv.get() ? [
+            'mingw-w64-ucrt-x86_64-toolchain',
+            'mingw-w64-ucrt-x86_64-asio',
+            'mingw-w64-ucrt-x86_64-openssl',
+            'mingw-w64-ucrt-x86_64-jsoncpp',
+            'mingw-w64-ucrt-x86_64-gtest',
+            'mingw-w64-ucrt-x86_64-imagemagick',
+            'mingw-w64-ucrt-x86_64-librsvg'
+        ] : []
+        List<String> linDeps = [
+            'build-essential',
+            'libasio-dev',
+            'libssl-dev',
+            'libjsoncpp-dev',
+            'libgtest-dev'
+        ]
+
+        AuxiliarCppRecursosExternos.instalaDeps(
+            comandoRemoto, winDiscProv.get(), winDeps, linDeps, false
+        )
+    }
+}
+// Integração com as tasks nativas do plugin cpp-application
+tasks.withType(CppCompile).configureEach {
+    mustRunAfter tasks.named('criaAsseios')
+    inputs.files(tasks.named('criaAsseios'))
+
+    String config = name.contains('Release') ? 'Release' : 'Debug'
+    String alvo = (name.contains('Windows') || name.contains('windows')) ? 'Windows' : 'Linux'
+    String arqtt = (name.contains('X86') && !name.contains('X86-64') && !name.contains('x86_64'))
+        ? 'X86' : 'X86-64'
+    compilerArgs.addAll(providers.provider { pegaFlamasCompWeb(alvo, arqtt, config, false) })
+}
+
+tasks.withType(LinkExecutable).configureEach {
+    String config = name.contains('Release') ? 'Release' : 'Debug'
+    String alvo = (name.contains('Windows') || name.contains('windows')) ? 'Windows' : 'Linux'
+    String arqtt = (name.contains('X86') && !name.contains('X86-64') && !name.contains('x86_64'))
+        ? 'X86' : 'X86-64'
+    boolean eTeste = name.contains('Test') || name.contains('test')
+    linkerArgs.addAll(providers.provider { pegaFlamasLinkWeb(alvo, arqtt, config, eTeste) })
+}

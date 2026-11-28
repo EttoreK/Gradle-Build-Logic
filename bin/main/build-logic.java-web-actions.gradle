@@ -17,14 +17,29 @@ Provider<Map<String, String>> secretoPropsProv = providers.of(AuxiliarGeralLeito
 Provider<Boolean> eWindowsProv = providers.systemProperty('os.name').map {
     it.toLowerCase().contains('windows')
 }
-Provider<Directory> buildDirProv = project.layout.buildDirectory
+Provider<Directory> buildDirProv = layout.buildDirectory
 Provider<Directory> deployDirProv = buildDirProv.dir('distributions')
 Provider<String> nomeAppProv = progPropsProv.map { it.getOrDefault('projNome', 'Modelo') }
-Provider<String> espNomeProv = progPropsProv.map { it.getOrDefault('espolioDir', 'espolio') }
+Provider<String> astNomeProv = progPropsProv.map { it.getOrDefault('asseiosDir', 'asseios') }
 Provider<String> verNumProv = progPropsProv.map { it.getOrDefault('appVerNum', '1') }
 Provider<Boolean> jarMagroProv = providers.gradleProperty('buildMagroWeb').map { 
     it.toBoolean() 
-}.orElse(gradle.startParameter.taskNames.contains('submitWeb'))
+}.orElse(gradle.startParameter.taskNames.any { it == 'submitWeb' || it.endsWith(':submitWeb') })
+Provider<String> mainClassProv = progPropsProv.map { Map<String, String> props ->
+    String classe = props.get('webMainClass')?.trim()
+    if (classe) { return classe }
+    String nomeApp = props.get('projNome')?.trim()
+    String pacote = props.get('appIdPacote')?.trim()
+    return (nomeApp && pacote) ? "${pacote}.web.${nomeApp}Application" : null
+}.orElse(tasks.named('resolveMainClassName').flatMap {
+    it.outputFile.map { RegularFile arq -> arq.asFile.text.trim() }
+})
+
+Provider<List<String>> jarsIgnoradosProv = progPropsProv.map { Map<String, String> props ->
+    props.getOrDefault('webJarsIgnorados', '').split(',').collect { it.trim() }.findAll { 
+        !it.isEmpty() 
+    }
+}
 // Tarefas personalizadas
 tasks.named('jar') { enabled = false } // destivado para não gerar jar parciais
 // Configurado para alterar o nome do jar gerado e otimizar o tamanho do arquivo
@@ -47,7 +62,7 @@ tasks.named('bootJar') { // Compilador padrão
         arq.isFile() && 
         arq.name.endsWith('.jar') &&
         !arq.name.contains('spring-boot-jarmode-tools') &&
-        !arq.name.contains('bib-lista') // remove o JAR duplicado
+        !jarsIgnoradosProv.get().any { String ig -> arq.name.contains(ig) } // tira o JAR duplicado
     }
     
     exclude 'main/**', '**/classpath.idx', '**/layers.idx', '**/spring-boot-jarmode-tools-*.jar'
@@ -72,27 +87,24 @@ tasks.register('orderJar', Jar) { // Compilador secundário -Pthin=true
     // Puxa apenas o zip do ProGuard
     from({ zipTree(buildDirProv.file('intermediates/minified-project.jar')) })
 
-    Provider<String> classPathProv = configurations.named('runtimeClasspath')
-        .flatMap { Configuration cfg -> cfg.elements }
-        .map { Set<FileSystemLocation> arqs ->
-            arqs.collect { FileSystemLocation loc -> loc.asFile.name }
-                .findAll { String nome ->
-                    !nome.startsWith('bib-lista') && !nome.startsWith('spring-boot-jarmode-tools')
-                }
-                .sort()
-                .collect { String nome -> "lib/${nome}" }
-                .join(' ')
-        }
-    
-    inputs.property('manifestClassPath', classPathProv)
-    
-    manifest {
-        attributes('Main-Class': 'com.oboco.web.LoggerApplication')
+    Provider<String> classPathProv = configurations.named('runtimeClasspath').flatMap { 
+        Configuration cfg -> cfg.elements 
+    }.zip(jarsIgnoradosProv) { Set<FileSystemLocation> arqs, List<String> ignorados ->
+        arqs.collect { FileSystemLocation loc -> loc.asFile.name }.findAll { String nome ->
+                !nome.startsWith('spring-boot-jarmode-tools') &&
+                !ignorados.any { String ig -> nome.startsWith(ig) }
+            }.sort().collect { String nome -> "lib/${nome}" }.join(' ')
     }
+
+    inputs.property('manifestMainClass', mainClassProv)
+    inputs.property('manifestClassPath', classPathProv)
 
     doFirst {
         manifest {
-            attributes('Class-Path': classPathProv.get())
+            attributes(
+                'Main-Class': mainClassProv.get(),
+                'Class-Path': classPathProv.get()
+            )
         }
     }
 }
@@ -126,7 +138,7 @@ tasks.register('minWebJar', proguard.gradle.ProGuardTask) {
     libraryjars "${System.getProperty('java.home')}/jmods"
     // Referencia as libs externas mas não inclui no processo de encolhimento
     libraryjars configurations.runtimeClasspath
-    configuration file('proguard-web.pro')
+    configuration layout.projectDirectory.file('proguard-web.pro')
 
     doFirst {
         File miniJar = miniJarProv.get().asFile
@@ -138,6 +150,7 @@ tasks.register('minWebJar', proguard.gradle.ProGuardTask) {
 tasks.register('buildWeb') {
     group = 'Web Actions'
     description = 'Compila para criar um, ou vários, .jar'
+    mustRunAfter tasks.named('cleanWeb')
 
     Provider<RegularFile> orderJarArqProv = tasks.named('orderJar', AbstractArchiveTask).flatMap { 
         it.archiveFile 
@@ -157,7 +170,7 @@ tasks.register('buildWeb') {
 tasks.register('runWeb') { // http://localhost:8080
     group = 'Web Actions'
     description = 'Executa se o JAR já existente na pasta lib'
-    mustRunAfter assemble // só tenta rodar se o arquivo realmente existir
+    mustRunAfter tasks.named('assemble') // só tenta rodar se o arquivo realmente existir
     inputs.files(tasks.named('buildWeb'))
     outputs.upToDateWhen { false }
 
@@ -170,7 +183,7 @@ tasks.register('runWeb') { // http://localhost:8080
         }
 
         ProcessBuilder pb
-        if (System.getProperty('os.name').toLowerCase().contains('windows')) {
+        if (eWindowsProv.get()) {
             pb = new ProcessBuilder('cmd', '/c', 'start', 'cmd', '/k', 'java', '-jar', jarArq.name)
         } else { pb = new ProcessBuilder('sh', '-c', "java -jar \"${jarArq.name}\" &") }
 
@@ -239,9 +252,9 @@ tasks.register('webIco') {
     group = 'Web Actions'
     description = 'Gera o icone.png para a aplicação Web'
 
-    Provider<Directory> espolioDirProv = layout.settingsDirectory.dir(espNomeProv)
-    Provider<RegularFile> fundoSvgProv = espolioDirProv.map { it.file('icones/appBackground.svg') }
-    Provider<RegularFile> frenteSvgProv = espolioDirProv.map { it.file('icones/appForeground.svg') }
+    Provider<Directory> asseiosDirProv = layout.settingsDirectory.dir(astNomeProv)
+    Provider<RegularFile> fundoSvgProv = asseiosDirProv.map { it.file('icones/appBackground.svg') }
+    Provider<RegularFile> frenteSvgProv = asseiosDirProv.map { it.file('icones/appForeground.svg') }
     Provider<RegularFile> pngArqProv = buildDirProv.file('generated/webIcoRes/static/favicon.png')
     
     inputs.files(fundoSvgProv, frenteSvgProv)
@@ -277,7 +290,7 @@ tasks.register('webIco') {
 }
 // Evia a nova versão para o servidor
 tasks.register('submitWeb') {
-    group = 'deploy actions'
+    group = 'Deploy Actions'
     description = 'Envia os arquivos para o servidor remoto'
     mustRunAfter(tasks.named('orderJar'))
     mustRunAfter(tasks.named('orderLibs'))
@@ -421,5 +434,5 @@ tasks.register('submitWeb') {
         }
     }
 }
-// Biblioteras para serem usadas no código
+// Bibliotecas para serem usadas no código
 // dependencies {}

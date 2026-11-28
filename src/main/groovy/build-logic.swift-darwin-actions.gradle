@@ -3,7 +3,7 @@
 plugins.apply(libs.plugins.buildLogicSwiftDarwinGeral.get().getPluginId())
 // application {} // Define configurações do swift-application (incompativel com gradle 9 [11/2025])
 // Atalhos para facilitar a leitura
-Object xcConfig = project.extensions.getByType(AuxiliarSwiftConfiguradorXcode)
+Object xcConfig = extensions.getByType(AuxiliarSwiftConfiguradorXcode)
 Provider<Map<String, String>> localPropsProv = providers.of(AuxiliarGeralLeitorDePropriedades) { 
     String nomeArq = providers.gradleProperty('localPropertiesNome').getOrElse('local.properties')
     parameters.propertiesFile.set(layout.settingsDirectory.file(nomeArq))
@@ -28,6 +28,7 @@ Provider<String> appleSenhaProv = secretoPropsProv.map { it.get('apple.senha') }
 Provider<String> certificadoProv = secretoPropsProv.map { it.get('apple.certificado') }
 Provider<String> nomePerfilProv = secretoPropsProv.map { it.get('apple.nomePerfil') }
 Provider<String> simuladorUsualProv = localPropsProv.map { it.getOrDefault('simulador.ios', '') }
+Provider<Directory> dirVazioProv = objects.directoryProperty()
 // Busca um simulador de iOS disponível e armazena em cache
 Closure<String> pegaSimulador = {
     String simuladorUsual = simuladorUsualProv.get()
@@ -75,11 +76,10 @@ Closure<String> pegaDir = { String sobDir, String subDir ->
     else { return "${vmXcodeDirProv.get()}/${sobDir}/${subDir}" }
 }
 // Retorna arquivos para os artefatos de build. Retorna vazio se estiver em modo remoto
-Closure<Provider<FileCollection>> pegaArquivos = { String subDir ->
-    if (xcConfig.eMac.get()) {
-        return project.layout.files(xcDirProv.get().dir('products').dir(subDir)) 
-    } 
-    else { return project.layout.files(new File("${vmXcodeDirProv.get()}/products/${subDir}")) }
+Closure<FileCollection> pegaArquivos = { String subDir ->
+    return layout.files(xcConfig.eMac.flatMap { Boolean ehMac ->
+        ehMac ? xcDirProv.map { Directory d -> d.dir("products/${subDir}") } : dirVazioProv
+    })
 }
 // Retorna um caminho de derived-data para cada plataforma
 Closure<String> pegaArchiveDir = { String platforma ->
@@ -99,9 +99,9 @@ tasks.register('syncToMac') { // caso necessário use "--rerun" para forçar a r
     }})
     outputs.upToDateWhen { true } // só sincroniza 1 vez, neessário para não apagar as builds
 
-    Provider<Directory> espolioDirProv = xcConfig.rootDir.zip(progPropsProv) { 
+    Provider<Directory> asseiosDirProv = xcConfig.rootDir.zip(progPropsProv) { 
         Directory raiz, Map<String, String> esp -> 
-        raiz.dir(esp.getOrDefault('espolioDir', 'espolio')) 
+        raiz.dir(esp.getOrDefault('asseiosDir', 'asseios')) 
     }
     Provider<Directory> geradoDirProv = xcConfig.rootDir.zip(xcConfig.buildXDir) { 
         Directory raiz, String buildX -> raiz.dir("${buildX}/generated") 
@@ -138,7 +138,7 @@ tasks.register('syncToMac') { // caso necessário use "--rerun" para forçar a r
             }
         }
 
-        espolioDirProv.get().asFile.eachFile { File arq ->
+        asseiosDirProv.get().asFile.eachFile { File arq ->
             List<String> copiaCmds = [
                 'scp', '-r', '-p', arq.absolutePath, "${vmEntrada}:${vmResDir}"
             ]
@@ -180,8 +180,8 @@ tasks.register('syncToMac') { // caso necessário use "--rerun" para forçar a r
 }
 // Tarefa para limpar os arquivos de build do Xcode
 tasks.register('cleanMac', Exec) {
-    description = 'Limpa os arquivos de build do Xcode para iOS.'
     group = 'MacOs Controller'
+    description = 'Limpa os arquivos de build do Xcode para MacOS e iOS.'
     workingDir(xcConfig.projDir)
     outputs.upToDateWhen { false } // sempre executa
 
@@ -193,7 +193,6 @@ tasks.register('cleanMac', Exec) {
         }}
 
         @Override Iterable<String> asArguments() {
-            boolean eMac = getEMacProv().get()
             String simulador = pegaSimulador()
             String dirXc = getDirXcProv().get()
             String donoMac = '$(getconf DARWIN_USER_CACHE_DIR)' // pra reduzir o tamanho da linha
@@ -212,10 +211,10 @@ tasks.register('cleanMac', Exec) {
                 'rm', '-rf', "\"${xcodeDir}/UserData/Previews/\"*", '|| true &&',
                 'rm', '-rf', '"$HOME/Library/Caches/com.apple.dt.Xcode/"*', '|| true &&',
                 // Limpa Caches de Suporte a Dispositivos Físicos
-                'rm', '-rf', "\"${xcodeDir}//iOS DeviceSupport/\"*", '|| true &&',
-                'rm', '-rf', "\"${xcodeDir}//watchOS DeviceSupport/\"*", '|| true &&',
-                'rm', '-rf', "\"${xcodeDir}//tvOS DeviceSupport/\"*", '|| true &&',
-                'rm', '-rf', "\"${xcodeDir}//visionOS DeviceSupport/\"*", '|| true &&',
+                'rm', '-rf', "\"${xcodeDir}/iOS DeviceSupport/\"*", '|| true &&',
+                'rm', '-rf', "\"${xcodeDir}/watchOS DeviceSupport/\"*", '|| true &&',
+                'rm', '-rf', "\"${xcodeDir}/tvOS DeviceSupport/\"*", '|| true &&',
+                'rm', '-rf', "\"${xcodeDir}/visionOS DeviceSupport/\"*", '|| true &&',
                 // Limpa Caches do Simulador
                 'xcrun', 'simctl shutdown', "\'${simulador}\'", '|| true &&',
                 'xcrun', 'simctl erase', "\'${simulador}\'", '|| true &&',
@@ -229,11 +228,11 @@ tasks.register('cleanMac', Exec) {
 Closure<Void> xbuild = { Task tarefa, String platforma, String sdk, String config ->
     tarefa.description = "Compila o projeto Xcode para ${platforma.toUpperCase()} (${config})"
     tarefa.group = 'Xcode Actions'
-    tarefa.inputs.dir xcConfig.srcDir.get()
+    tarefa.inputs.dir xcConfig.srcDir
     tarefa.inputs.files(tasks.named('xproj'))
-    tarefa.inputs.dir xcConfig.xcodeProj.get()
+    tarefa.inputs.dir xcConfig.projDir.zip(xcConfig.xcodeProj) { Directory d, String p -> d.dir(p) }
     tarefa.inputs.files(tasks.named('syncToMac')) // garante sync antes do build, se remoto
-    tarefa.outputs.files({xcConfig.eMac.get() ? pegaArquivos("${config}-${sdk}") : null}).optional()
+    tarefa.outputs.files(pegaArquivos("${config}-${sdk}")).optional()
     // Configura o comando de build do Xcode
     tarefa.executable = pegaExecutavelBase()
     tarefa.argumentProviders.add(new CommandLineArgumentProvider() {
@@ -302,7 +301,7 @@ Closure<Void> xtest = { Task tarefa, String platforma, String sdk, Provider<Stri
     tarefa.description = "Executa os testes para ${platforma.toUpperCase()}"
     tarefa.group = 'Xcode Actions'
     // Dependência implícita do build
-    tarefa.inputs.files({ xcConfig.eMac.get() ? pegaArquivos("Debug-${sdk}") : null }).optional()
+    tarefa.inputs.files(pegaArquivos("Debug-${sdk}")).optional()
     tarefa.inputs.files(tasks.named('syncToMac')) // garante sync antes do teste, se remoto
 
     Provider<String> derivedDataDirProv = providers.provider { pegaDir('derived-data', platforma) }
@@ -311,7 +310,6 @@ Closure<Void> xtest = { Task tarefa, String platforma, String sdk, Provider<Stri
     }
 
     tarefa.doFirst {
-        String derivedDataDir = derivedDataDirProv.get()
         String resultadoPacoteArq = resultadoPacoteArqProv.get()
         // Garante que o diretório de resultados anterior seja limpo
         if (xcConfig.eMac.get()) { // Caso MacOS: Usa rm -rf
@@ -387,20 +385,20 @@ tasks.register('testIos') {
 Closure<Void> xarchive = { Task tarefa, String platforma, String sdk ->
     tarefa.description = "Cria um arquivo .xcarchive para ${platforma.toUpperCase()} (Release)"
     tarefa.group = 'Xcode Actions'
-    tarefa.inputs.dir xcConfig.srcDir.get()
+    tarefa.inputs.dir xcConfig.srcDir
     tarefa.inputs.files(tasks.named('xproj'))
-    tarefa.inputs.dir xcConfig.xcodeProj.get()
+    tarefa.inputs.dir xcConfig.projDir.zip(xcConfig.xcodeProj) { Directory d, String p -> d.dir(p) }
     tarefa.inputs.files(tasks.named('syncToMac'))
 
-    Provider<RegularFile> archiveArqProv = project.layout.file(project.provider { 
-        new File(xcConfig.rootDir, pegaArchiveDir(platforma)) 
-    })
+    Provider<Directory> archiveDirProv = xcDirProv.zip(xcConfig.nomeApp) { Directory xDir, 
+        String app -> xDir.dir("derived-data/${platforma}/${app}-${platforma}.xcarchive")
+    }
     Provider<String> categoriaProv = progPropsProv.map { 
         it.getOrDefault('apple.category', 'app-store-connect') 
     }
 
-    tarefa.outputs.file(xcConfig.eMac.flatMap { Boolean ehMac ->
-        ehMac ? archiveArqProv : providers.provider { null }
+    tarefa.outputs.dir(xcConfig.eMac.flatMap { Boolean ehMac ->
+        ehMac ? archiveDirProv : dirVazioProv
     }).optional()
     // O Archive usa uma configuração específica de Release
     tarefa.executable = pegaExecutavelBase()
@@ -445,7 +443,7 @@ tasks.register('archiveMacos', Exec) { xarchive(it, 'macos', 'macosx') }
 tasks.register('archiveIos', Exec) { xarchive(it, 'ios', 'iphoneos') }
 // Valida e assina o aplicativo, (não funciona, não tenho nenhuma chave de desenvolvedor válida)
 Closure<Void> xexport = { Task tarefa, String platforma ->
-    tarefa.description = 'Exporta o apliativo.xcarchive para AppStore'
+    tarefa.description = 'Exporta o aplicativo.xcarchive para AppStore'
     tarefa.group = 'Xcode Actions'
     tarefa.inputs.files(tasks.named("archive${platforma.capitalize()}")) // dependência implicita
     tarefa.outputs.file(xcConfig.eMac.map { Boolean eMac ->
@@ -503,5 +501,5 @@ Closure<Void> xsubmit = { Task tarefa, String platforma ->
 // Registra as tarefas de submissão para cada plataforma
 tasks.register('submitIos', Exec) { xsubmit(it, 'ios') }
 tasks.register('submitMacos', Exec) { xsubmit(it, 'macos') }
-// Biblioteras para serem usadas no código
+// Bibliotecas para serem usadas no código
 // dependencies {}

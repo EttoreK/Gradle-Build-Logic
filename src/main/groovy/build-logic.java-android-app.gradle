@@ -7,16 +7,17 @@ Provider<Map<String, String>> progPropsProv = providers.of(AuxiliarGeralLeitorDe
     parameters.propertiesFile.set(layout.settingsDirectory.file(nomeArq))
 }
 // Define o diretório de build usando o nome dinâmico da pasta
-project.layout.buildDirectory.set(project.layout.dir( progPropsProv.map { 
-    new File(project.rootDir, it.getOrDefault('buildDirAndroid', 'build/java/android')) 
-}))
+layout.buildDirectory.set(layout.settingsDirectory.dir(
+    progPropsProv.map { it.getOrDefault('buildDirJavaAdr', 'build/java/android') }
+))
 // Declaração dos plugins
+plugins.apply(libs.plugins.androidApp.get().getPluginId())  // plugin oficial pra aplicações Android
 plugins.apply(libs.plugins.buildLogicJavaGeral.get().getPluginId())
 plugins.apply(libs.plugins.buildLogicJavaAndroidActions.get().getPluginId())
 // Provedores de configuração
-Provider<Directory> espolioDirProv = project.layout.dir( progPropsProv.map { 
-    new File(project.rootDir, it.getOrDefault('espolioDir', 'espolio')) 
-})
+Provider<Directory> asseiosDirProv = layout.settingsDirectory.dir(
+    progPropsProv.map { it.getOrDefault('asseiosDir', 'asseios') }
+)
 Provider<String> projNomeProv = progPropsProv.map { it.getOrDefault('projNome', 'Modelo') }
 Provider<String> idPacoteProv = progPropsProv.map { it.getOrDefault('appIdPacote', 'com.modelo') }
 Provider<String> mainPacoteProv = progPropsProv.map { it.getOrDefault('javaMainPacote', '.app') }
@@ -31,9 +32,9 @@ android {
     // Configurações padrão para o aplicativo Android
     defaultConfig {
         applicationId "${idPacoteProv.get()}.${projNomeProv.get().toLowerCase()}" // id aplicativo
-        minSdk = ver.sdkMin.get().toInteger() // compatibilidade APIs do Android
-        targetSdk = ver.sdkTarget.get().toInteger() // versão Android mínima
-        compileSdk = ver.sdkCompile.get().toInteger() // versão Android principal
+        minSdk = ver.sdkMin.get().toInteger() // versão Android mínima
+        targetSdk = ver.sdkTarget.get().toInteger() // versão Android principal
+        compileSdk = ver.sdkCompile.get().toInteger() // compatibilidade APIs do Android
         versionCode verNumProv.get().toInteger() // versão de registro no Google Play
         versionName verNomeProv.get() // nome da versão em exibição
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
@@ -64,12 +65,12 @@ android {
         // Código principal, androidx usa res, mas o gradle cria resources
         main {
             res.srcDirs = ['src/main/resources'] // recursos .xml do código
-            assets.srcDirs += [espolioDirProv] // recursos gerais
+            assets.srcDirs += [asseiosDirProv] // recursos gerais
         }
         // Códigos de teste
         test {
             res.srcDirs = ['src/test/resources'] // recursos .xml dos códigos de teste
-            assets.srcDirs += [espolioDirProv] // recursos gerais
+            assets.srcDirs += [asseiosDirProv] // recursos gerais
         }
     }
     // Configuração para usar Junit
@@ -103,7 +104,7 @@ android {
     // Controle sobre compilaação
     buildFeatures {
         buildConfig = false
-        viewBinding = false // ativa a view binding para melhorar as views do aplicativo
+        viewBinding = false // desativa a view binding para melhorar as views do aplicativo
     }
     // Controle de assinatura para distribuição
     signingConfigs {
@@ -150,36 +151,20 @@ tasks.withType(Test).configureEach {
     testLogging {
         // Mostra no terminal os testes que passaram, foram pulados ou falharam
         events 'passed', 'skipped', 'failed'
-        showStandardStreams = false // saída padrão do console
+        showStandardStreams = true // saída padrão do console
         // Se der erro, mostra o rastro completo do problema
         exceptionFormat = 'full'
         showCauses = true
         showStackTraces = true
     }
 }
-// Biblioteras para serem usadas no código
+// Bibliotecas para serem usadas no código
 dependencies {
     androidTestImplementation libs.adrxTestCore // conversa com o Android
     androidTestImplementation libs.adrxTestEspresso // framework do Andoird para testes
     androidTestImplementation libs.adrxTestExtJunit // empacota tudo isso e manda o executor do Java
     androidTestImplementation libs.adrxTestRules // cria atalhos fáceis para abrir 
-    testImplementation libs.junitAPI // api dp Junit 5
+    testImplementation libs.junitAPI // api do Junit 5
     testRuntimeOnly libs.junitEngine // engine do Junit 5
     testRuntimeOnly libs.junitPlt // necessário
-}
-// Bloqueio de Kotlin nas configurações de produção
-configurations.matching {
-    it.name in [
-        'debugCompileClasspath', 'debugRuntimeClasspath',
-        'releaseCompileClasspath', 'releaseRuntimeClasspath'
-    ]
-}.configureEach {
-    exclude group: 'org.jetbrains.kotlin'
-    exclude group: 'org.jetbrains.kotlinx'
-
-    resolutionStrategy.eachDependency { DependencyResolveDetails det ->
-        if (det.requested.group in ['org.jetbrains.kotlin', 'org.jetbrains.kotlinx']) {
-            throw new GradleException("Dependência Kotlin proibida em produção: ${det.requested}")
-        }
-    }
 }

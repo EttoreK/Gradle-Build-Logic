@@ -17,16 +17,16 @@ tasks.register('cleanAndroid') {
     finalizedBy tasks.named('clean')
 }
 // Manipulação do arquivo .classpath para o VS Code parar de reclamar
-tasks.register('posBuild') {
+tasks.register('posBuildAndroid') {
     group = 'Android Actions'
     description = 'Sobereescreve o .classpath incluindo módulos e dependências'
     mustRunAfter tasks.named('buildAndroid')
     // captura todas as dependências de compilação Bibliotecas e Subprojetos
     Provider<List<RegularFile>> bootClasspathProv = androidComponents.sdkComponents.bootClasspath
-    Provider<Directory> buildDirProv = project.layout.buildDirectory
-    Provider<RegularFile> classpathArqProv = providers.provider { 
-        project.layout.projectDirectory.file('.classpath') 
-    }
+    Provider<Directory> buildDirProv = layout.buildDirectory
+    Provider<RegularFile> classpathArqProv = objects.fileProperty().convention(
+        layout.projectDirectory.file('.classpath')
+    )
 
     Closure<Provider<Set<FileSystemLocation>>> pegaDeps = { String nomeConfig ->
         return configurations.named(nomeConfig).flatMap { Configuration config ->
@@ -49,14 +49,14 @@ tasks.register('posBuild') {
         if (classpathArq.exists() && classpathArq.canWrite()) {
             List<RegularFile> bootArqs = bootClasspathProv.get()
             String compDir = buildDirProv.get().asFile.absolutePath.replace(File.separator,'/')
-            String xmlArq = classpathArq.text
+            String xmlOriginal = classpathArq.text
             // String rDir = String.join('', compDir, '/intermediates/',
             //     'compile_and_runtime_not_namespaced_r_class_jar/debug/processDebugResources/R.jar'
             // )
             StringBuilder novasBib = new StringBuilder()
             // Lê o arquivo linha por linha e remove referências a arquivos que foram deletados
             List<String> linhasLimpas = []
-            xmlArq.eachLine { String linha ->
+            xmlOriginal.eachLine { String linha ->
                 if (linha.contains('kind=\"lib\"')) {
                     java.util.regex.Matcher matcher = (linha =~ /path="([^"]+)"/)
                     if (matcher.find()) {
@@ -71,7 +71,7 @@ tasks.register('posBuild') {
                     linhasLimpas << linha
                 }
             }
-            xmlArq = linhasLimpas.join('\n')
+            String xmlArq = linhasLimpas.join('\n')
             // Injeção de pasta de código
             if (!xmlArq.contains("path=\"src/main/java\"")) {
                 novasBib.append("    <classpathentry kind=\"src\" path=\"src/main/java\"/>\n")
@@ -138,7 +138,7 @@ tasks.register('posBuild') {
                 }
             }
             // Gravação do arquivo
-            if (novasBib.length() > 0 || xmlArq != classpathArq.text) {
+            if (novasBib.length() > 0 || xmlArq != xmlOriginal) {
                 if (novasBib.length() > 0) {
                     xmlArq = xmlArq.replace('</classpath>', "${novasBib.toString()}</classpath>")
                 }
@@ -152,7 +152,7 @@ tasks.register('buildAndroid') {
     group = 'Android Actions'
     description = 'Compila o projeto Android (Debug e Release)'
     mustRunAfter tasks.named('cleanAndroid')
-    finalizedBy tasks.named('posBuild')
+    finalizedBy tasks.named('posBuildAndroid')
     inputs.files(tasks.named('assemble'))
 }
 // Instala o app no simulador e executa o app
@@ -200,6 +200,9 @@ tasks.register('runAndroid') {
             return texto.lines().findFirst().map { it.trim() }.orElse(null)
         }.orElse(providers.provider { localPropsProv.get().get('simulador.android') })
     )
+    Provider<Boolean> eWindowsProv = providers.systemProperty('os.name').map {
+        it.toLowerCase().contains('windows')
+    }
 
     doFirst {
         String simulador = simuladorProv.get()
@@ -220,10 +223,8 @@ tasks.register('runAndroid') {
             'CPUID.01H:ECX.avx'
         ]
         // Detecção básica de SO para rodar o comando 'start' (Windows) ou '&' (Linux/Mac)
-        if (System.getProperty('os.name').toLowerCase().contains('windows')) {
-            String filtro = 'findstr /V ' + saidaFiltro.collect { 
-                "/${localPropsProv.get().getOrDefault('unidade.win', 'C')}:\"${it}\"" 
-            }.join(' ')
+        if (eWindowsProv.get()) {
+            String filtro = 'findstr /V ' + saidaFiltro.collect { "/C:\"${it}\"" }.join(' ')
             new ProcessBuilder(
                 'cmd', '/c', "start cmd /k \"${parametros} 2>&1 | ${filtro}\""
             ).start()
@@ -254,7 +255,7 @@ tasks.register('runAndroid') {
 // Rodar todos os testes para Android
 tasks.register('testAndroid') {
     group = 'Android Actions'
-    description = 'Roda apenas os testes unitários do Android.'
+    description = 'Roda os testes unitários e instrumentados do Android'
     mustRunAfter tasks.named('installDebug')
     mustRunAfter tasks.named('runSimulatorAndroid')
     mustRunAfter tasks.named('runAndroid')
@@ -271,5 +272,5 @@ tasks.matching { it.name == 'connectedDebugAndroidTest' }.configureEach {
     mustRunAfter tasks.named('installDebug')
     mustRunAfter tasks.named('runSimulatorAndroid')
 }
-// Biblioteras para serem usadas no código
+// Bibliotecas para serem usadas no código
 // dependencies {}

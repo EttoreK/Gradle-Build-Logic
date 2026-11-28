@@ -4,11 +4,11 @@ Este repositório possui arquivos `.gradle` designados para serem usados juntos 
 
 ## Nota
 
-As instruções para o adição desse repositório no projeto estão em [gradle-modelo](https://github.com/EttoreK/Gradle-Modelo.git).
+As instruções para a adição desse repositório no projeto estão em [gradle-modelo](https://github.com/EttoreK/Gradle-Modelo.git).
 
 ## Comandos
 
-Use `graldew` para Windows e `./gradlew` para Unix
+Use `gradlew` para Windows e `./gradlew` para Unix
 
 ### Android (Java)
 
@@ -18,7 +18,7 @@ Use `graldew` para Windows e `./gradlew` para Unix
 ./gradlew cleanAndroid
 ```
 
-2. Sobereescreve o .classpath incluindo módulos e dependências:
+2. Sobreescreve o .classpath incluindo módulos e dependências:
 
 ```shell
 ./gradlew posBuild
@@ -68,10 +68,10 @@ Use `graldew` para Windows e `./gradlew` para Unix
 ./gradlew cleanC
 ```
 
-04. Converte os arquivos do diretório espolio/assets em um Header C++:
+04. Converte os arquivos do diretório asseios/assets em um Header C++:
 
 ```shell
-./gradlew criaEspolio
+./gradlew criaAsseios
 ```
 
 05. Instala dependências do Pacman via MSYS2 Bash:
@@ -80,7 +80,7 @@ Use `graldew` para Windows e `./gradlew` para Unix
 ./gradlew instalaDeps
 ```
 
-06. Compila nativamente, ou via SSH em para o alvo desejado:
+06. Compila nativamente, ou via SSH para o alvo desejado:
 
 ```shell
 ./gradlew build['Win' | 'Lin']['64' | '32']['' | 'Release']
@@ -111,13 +111,13 @@ Use `graldew` para Windows e `./gradlew` para Unix
 
 ### Web (Java)
 
-01. Cria um `.jar`gordo para o SpringBoot:
+01. Cria um `.jar` gordo para o SpringBoot:
 
 ```shell
 ./gradlew bootJar
 ```
 
-02. Cria um `.jar`distribuido para o SpringBoot:
+02. Cria um `.jar` distribuído para o SpringBoot:
 
 ```shell
 ./gradlew orderJar
@@ -141,7 +141,7 @@ Use `graldew` para Windows e `./gradlew` para Unix
 ./gradlew minWebJar
 ```
 
-06. Constroi o `.jar` para o aplicativo SpringBoot, usando bootJar como padrão ou orderJar ao usar `-Pthin=true`:
+06. Constrói o `.jar` para o aplicativo SpringBoot, usando bootJar como padrão ou orderJar ao usar `-PbuildMagroWeb=true`:
 
 ```shell
 ./gradlew buildWeb [-Pthin=true]
@@ -215,13 +215,13 @@ Use `graldew` para Windows e `./gradlew` para Unix
 ./gradlew test['Macos' | 'Ios']
 ```
 
-07. Cria um arquivo .xcarchive para ao alvo (Release):
+07. Cria um arquivo .xcarchive para o alvo (Release):
 
 ```shell
 ./gradlew archive['Macos' | 'Ios']
 ```
 
-08. Exporta o apliativo.xcarchive para AppStore
+08. Exporta o aplicativo.xcarchive para AppStore
 
 ```shell
 ./gradlew export['Macos' | 'Ios']

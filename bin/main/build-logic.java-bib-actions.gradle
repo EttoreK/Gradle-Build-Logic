@@ -3,24 +3,30 @@ Provider<Map<String, String>> progPropsProv = providers.of(AuxiliarGeralLeitorDe
     parameters.propertiesFile.set(layout.settingsDirectory.file(nomeArq))
 }
 // Define o diretório de build usando o nome dinâmico da pasta
-project.layout.buildDirectory.set(project.layout.dir( progPropsProv.map { 
-    new File(project.rootDir, "${it.getOrDefault('buildDirJava', 'build/java')}/${project.name}") 
-}))
+Provider<String> nomeModProv = objects.property(String).convention(name)
+layout.buildDirectory.set(layout.settingsDirectory.dir(
+    progPropsProv.zip(nomeModProv) { Map<String, String> props, String mod ->
+        "${props.getOrDefault('buildDirJava', 'build/java')}/${mod}"
+    }
+))
 // Declaração dos plugins
 // plugins {}
+plugins.apply(libs.plugins.javaBib.get().getPluginId()) // plugin oficial para fazer biblioteca java
+plugins.apply(libs.plugins.buildLogicJavaGeral.get().getPluginId()) // configurações gerais do java
 // Manipulação do arquivo .classpath para o VSCODE parar de reclamar
-project.tasks.register('posBuildBib') {
+tasks.register('posBuildBib') {
     group = 'Bib Actions'
     description = 'Ajusta o .classpath do VS Code para incluir escopos de teste em bibliotecas Java'
     // Pega a configuração e declara como um Input
-    Provider<RegularFile> classpathArqProv = providers.provider { 
-        project.layout.projectDirectory.file('.classpath') 
-    }
-    Provider<Set<FileSystemLocation>> testRuntime = project.configurations.named(
+    Provider<RegularFile> classpathArqProv = objects.fileProperty().convention(
+        layout.projectDirectory.file('.classpath')
+    )
+    Provider<Set<FileSystemLocation>> testRuntime = configurations.named(
         'testRuntimeClasspath'
     ).flatMap { it.elements }
 
     inputs.files(testRuntime)
+    inputs.file(classpathArqProv).optional()
     outputs.upToDateWhen { false }
     
     doLast {
@@ -64,10 +70,10 @@ project.tasks.register('posBuildBib') {
         }
     }
 }
-// Biblioteras para serem usadas no código
+// Bibliotecas para serem usadas no código
 dependencies {
     implementation libs.jsonJava // manipulação de json
-    testImplementation libs.junitAPI // api dp Junit 5
+    testImplementation libs.junitAPI // api do Junit 5
     testRuntimeOnly libs.junitEngine // engine do Junit 5
     testRuntimeOnly libs.junitPlt // necessário
 }

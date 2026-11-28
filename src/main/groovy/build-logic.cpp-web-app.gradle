@@ -1,0 +1,43 @@
+Provider<Map<String, String>> progPropsProv = providers.of(AuxiliarGeralLeitorDePropriedades) {
+    String nomeArq = providers.gradleProperty('progPropertiesNome').getOrElse('programa.properties')
+    parameters.propertiesFile.set(layout.settingsDirectory.file(nomeArq))
+}
+// Define o diretório de build antes de aplicar as ações
+layout.buildDirectory.set(layout.settingsDirectory.dir(
+    progPropsProv.map { it.getOrDefault('buildDirCppWeb', 'build/cpp/web') }
+))
+// Declaração dos plugins da app
+// plugins {}
+plugins.apply(libs.plugins.cppApp.get().getPluginId()) // permite a criação de aplicações c++
+plugins.apply(libs.plugins.cppUnitTest.get().getPluginId()) // permite o teste de aplicações c++
+plugins.apply(libs.plugins.buildLogicCppGeral.get().getPluginId()) // configurações gerais do C++
+plugins.apply(libs.plugins.buildLogicCppWebActions.get().getPluginId()) // ações de build
+
+Provider<String> projNomeProv = progPropsProv.map { it.getOrDefault('projNome', 'Modelo') }
+// Configurações da aplicação nativa (servidor 64-bit)
+application {
+    baseName.set(projNomeProv.map { "${it}Web" })
+    targetMachines = [
+        machines.linux.x86_64, // linux
+        machines.windows.x86_64 // windows
+    ]
+
+    source.from fileTree(dir: 'src/main/cpp', include: '**/*.cpp')
+    source.from fileTree(dir: 'src/main/bib/cpp', include: '**/*.cpp')
+
+    privateHeaders.from 'src/main/headers'
+
+    File bibBase = layout.projectDirectory.dir('src/main/bib').asFile
+    if (bibBase.exists()) {
+        privateHeaders.from(bibBase)
+        bibBase.eachDirRecurse { File subPasta ->
+            privateHeaders.from(subPasta)
+        }
+    }
+}
+// Configuração dos Testes
+unitTest {
+    baseName.set(projNomeProv.map { "${it}WebTest" })
+}
+// Bibliotecas para serem usadas no código
+// dependencies {}

@@ -5,7 +5,7 @@ plugins.apply(libs.plugins.buildLogicSwiftDarwinGeral.get().getPluginId()) // co
 plugins.apply(libs.plugins.buildLogicSwiftDarwinActions.get().getPluginId()) // ações de build
 // Atalhos para facilitar a leitura
 Object ver = libs.versions
-Object xcConfig = project.extensions.getByType(AuxiliarSwiftConfiguradorXcode)
+Object xcConfig = extensions.getByType(AuxiliarSwiftConfiguradorXcode)
 // Definição de provedores para acesso à valores de configuração e diretórios
 Provider<Map<String, String>> localPropsProv = providers.of(AuxiliarGeralLeitorDePropriedades) { 
     String nomeArq = providers.gradleProperty('localPropertiesNome').getOrElse('local.properties')
@@ -16,11 +16,11 @@ Provider<Map<String, String>> progPropsProv = providers.of(AuxiliarGeralLeitorDe
     parameters.propertiesFile.set(layout.settingsDirectory.file(nomeArq))
 }
 // Definição de provedores para acesso à valores de configuração e diretórios
-Provider<String> espNomeProv = progPropsProv.map { it.getOrDefault('espolioDir', 'espolio') }
+Provider<String> astNomeProv = progPropsProv.map { it.getOrDefault('asseiosDir', 'asseios') }
 Provider<Directory> xcassetsDirProv = xcConfig.rootDir.zip(xcConfig.buildXDir) { 
     Directory raiz, String buildX -> raiz.dir("${buildX}/generated/Assets.xcassets") 
 }
-Provider<Directory> espolioDirProv = xcConfig.rootDir.zip(espNomeProv) { 
+Provider<Directory> asseiosDirProv = xcConfig.rootDir.zip(astNomeProv) { 
     Directory raiz, String esp -> raiz.dir(esp) 
 }
 Provider<Directory> xcProjDirProv = xcConfig.projDir.zip(xcConfig.xcodeProj) { 
@@ -423,17 +423,19 @@ Closure<String> criaScheme = { Map alvoMap, List testaveis, Map alvoSedeMap = nu
 // Descobre arquivos fonte e de recursos, populando listas em ePBX
 Closure<Void> descobreArqs = { Map ePBXMap, File testeDir, File baseDir, File resDir, File espDir, 
     Map arqsTesteMap ->
-    testeDir.eachDir { File dir ->
-        String dirNome = dir.name
-        if (arqsTesteMap.containsKey(dirNome)) { 
-            String arqNome = arqsTesteMap[dirNome]
-            dir.eachFileRecurse(groovy.io.FileType.FILES) { File arq ->
-                if (arq.name.contains('.DS_Store')) { return }
-                pegaLista(ePBXMap, arqNome).add(
-                    xcConfig.projDir.get().asFile.toURI().relativize(arq.toURI()).getPath()
-                )
-            }
-        } else { println ">> AVISO: local de teste \'${dirNome}\' não pertence a nenhum alvo." }
+    if (testeDir.exists()) {
+        testeDir.eachDir { File dir ->
+            String dirNome = dir.name
+            if (arqsTesteMap.containsKey(dirNome)) { 
+                String arqNome = arqsTesteMap[dirNome]
+                dir.eachFileRecurse(groovy.io.FileType.FILES) { File arq ->
+                    if (arq.name.contains('.DS_Store')) { return }
+                    pegaLista(ePBXMap, arqNome).add(
+                        xcConfig.projDir.get().asFile.toURI().relativize(arq.toURI()).getPath()
+                    )
+                }
+            } else { println ">> AVISO: local de teste \'${dirNome}\' não pertence a nenhum alvo." }
+        }
     }
     // Códigos Fonte (Swift)
     if (baseDir.exists()) {
@@ -470,7 +472,7 @@ Closure<Void> descobreArqs = { Map ePBXMap, File testeDir, File baseDir, File re
     }
 
     pegaRes(resDir, resDir, 'recursosLocal', "${AuxiliarSwiftConfiguradorXcode.RES_DIR}/")
-    pegaRes(espDir, espDir, 'recursosExt', "../${espNomeProv.get()}/")
+    pegaRes(espDir, espDir, 'recursosExt', "../${astNomeProv.get()}/")
     // Adiciona a pasta dos ícones
     File xcassetsPaiDir = xcassetsDirProv.get().asFile.parentFile
     String buildXDir = xcConfig.buildXDir.get()
@@ -676,8 +678,8 @@ Closure<Void> escreveArquivosFinais = { Map uuidsMap, Map ePBXMap, Map provsMap,
                 ${criaBlocoPBX(ePBXMap,['XCConfigurationList','ConfigurationList'],'\n')}
             };
             rootObject = ${pegaUuid(uuidsMap, 'base', 'projeto')};
-        }""".stripIndent().replaceAll('[\\n\\n]{1,3}', '\n').replaceAll(',,', ',').replaceAll(
-            "../${espNomeProv.get()}", AuxiliarSwiftConfiguradorXcode.RES_DIR
+        }""".stripIndent().replaceAll('[\\n\\n]{1,3}', '\n').replaceAll(',,', ',').replace(
+            "../${astNomeProv.get()}", AuxiliarSwiftConfiguradorXcode.RES_DIR
         ).replaceAll(/,\n\s*\);/, '\n\t\t\t);')
     
     plataformas.each { String plataforma ->
@@ -702,30 +704,30 @@ Closure<Void> escreveArquivosFinais = { Map uuidsMap, Map ePBXMap, Map provsMap,
             new File(schemesDir, "${testavel.diagrama}.xcscheme").text = criaScheme(
                 testavel, [testavel], alvoSedeMap, xcodeProjDir)
         }
-        // .plist para export
-        new File(pbxArq.parentFile, 'exportOptions.plist').text = """\
-            <?xml version=\"1.0\" encoding=\"UTF-8\"?>
-            <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\">
-            <plist version=\"1.0\">
-                <dict>
-                    <key>method</key>
-                    <string>${metodoProv.get()}</string>
-                    <key>signingStyle</key>
-                    <string>automatic</string>
-                    <key>stripSwiftSymbols</key>
-                    <true/>
-                    <key>teamID</key>
-                    <string>${xcConfig.idTime.get()}</string>
-                    <key>provisioningProfiles</key>
-                    <dict>
-                        <key>${xcConfig.xcIdPacoteApp.get()}</key>
-                        <string>AppStore_${xcConfig.xcIdPacoteApp.get()}</string>
-                    </dict>
-                    <key>iCloudContainerEnvironment</key>
-                    <string>Production</string>
-                </dict>
-            </plist>""".stripIndent()
     }
+    // .plist para export
+    new File(pbxArq.parentFile, 'exportOptions.plist').text = """\
+        <?xml version=\"1.0\" encoding=\"UTF-8\"?>
+        <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\">
+        <plist version=\"1.0\">
+            <dict>
+                <key>method</key>
+                <string>${metodoProv.get()}</string>
+                <key>signingStyle</key>
+                <string>automatic</string>
+                <key>stripSwiftSymbols</key>
+                <true/>
+                <key>teamID</key>
+                <string>${xcConfig.idTime.get()}</string>
+                <key>provisioningProfiles</key>
+                <dict>
+                    <key>${xcConfig.xcIdPacoteApp.get()}</key>
+                    <string>AppStore_${xcConfig.xcIdPacoteApp.get()}</string>
+                </dict>
+                <key>iCloudContainerEnvironment</key>
+                <string>Production</string>
+            </dict>
+        </plist>""".stripIndent()
 }
 // Lê o sistema de arquivos, popula os mapas globais e monta os arquivos para o xcode
 tasks.register('xproj') {
@@ -743,9 +745,9 @@ tasks.register('xproj') {
 
     inputs.files(tasks.named('xIcone'))
     inputs.dir xcConfig.srcDir
-    inputs.dir srcTestSwiftDirProv
+    inputs.dir(srcTestSwiftDirProv).optional()
     inputs.dir(resourcesDirProv).optional()
-    inputs.dir(espolioDirProv).optional()
+    inputs.dir(asseiosDirProv).optional()
     outputs.dir xcProjDirProv
 
     doFirst {
@@ -800,7 +802,7 @@ tasks.register('xproj') {
         }
         descobreArqs(
             ePBXMap, srcTestSwiftDirProv.get().asFile, xcConfig.srcDir.get().asFile, 
-            resourcesDirProv.get().asFile, espolioDirProv.get().asFile, arqsTesteMap)
+            resourcesDirProv.get().asFile, asseiosDirProv.get().asFile, arqsTesteMap)
         Map refsMap = processaReferencias(uuidsMap, ePBXMap, testAlvos, arqsTesteMap)
         Map<String, String> atrbAlvosMap = criaAlvo(uuidsMap, ePBXMap, alvos, plataformas, 
             refsMap.recs, refsMap.testes, refsMap.fontes, provs, nomeApp, idPacote, verSwift)
@@ -815,8 +817,8 @@ tasks.register('xIcone') {
     group = 'Xcode Actions'
     description = 'Gera o Assets.xcassets para o Xcode'
 
-    Provider<RegularFile> fundoSvgProv = espolioDirProv.map { it.file('icones/appBackground.svg') }
-    Provider<RegularFile> frenteSvgProv = espolioDirProv.map { it.file('icones/appForeground.svg') }
+    Provider<RegularFile> fundoSvgProv = asseiosDirProv.map { it.file('icones/appBackground.svg') }
+    Provider<RegularFile> frenteSvgProv = asseiosDirProv.map { it.file('icones/appForeground.svg') }
     Provider<String> winDiscProv = localPropsProv.map { it.getOrDefault('unidade.win', 'C') }
     Provider<Boolean> eLinuxProv = providers.systemProperty('os.name').map { 
         it.toLowerCase().contains('linux') 
@@ -894,5 +896,5 @@ tasks.register('xIcone') {
         }""".stripIndent().trim()
     }
 }
-// Biblioteras para serem usadas no código
+// Bibliotecas para serem usadas no código
 // dependencies {}

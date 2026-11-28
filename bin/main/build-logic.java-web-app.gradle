@@ -4,16 +4,18 @@ Provider<Map<String, String>> progPropsProv = providers.of(AuxiliarGeralLeitorDe
     parameters.propertiesFile.set(layout.settingsDirectory.file(nomeArq))
 }
 // Define o diretório de build usando o nome dinâmico da pasta
-project.layout.buildDirectory.set(project.layout.dir( progPropsProv.map { 
-    new File(project.rootDir, it.getOrDefault('buildDirWeb', 'build/java/web')) 
-}))
+layout.buildDirectory.set(layout.settingsDirectory.dir(
+    progPropsProv.map { it.getOrDefault('buildDirJavaWeb', 'build/java/web') }
+))
 // Declaração dos plugins
 // plugins {}
+plugins.apply(libs.plugins.javaApp.get().getPluginId()) // plugin oficial para aplicações java
+plugins.apply(libs.plugins.springBoot.get().getPluginId()) // plugin oficial do springboot
 plugins.apply(libs.plugins.buildLogicJavaGeral.get().getPluginId())
 plugins.apply(libs.plugins.buildLogicJavaWebActions.get().getPluginId())
 // Exclusões padrão do Spring Boot
-project.configurations {
-    // Remove o todas as dependências de uma vez
+configurations {
+    // Remove todas as dependências de uma vez
     all {
         exclude group: 'org.hibernate.validator', module: 'hibernate-validator'
         exclude group: 'org.yaml', module: 'snakeyaml'
@@ -28,30 +30,15 @@ project.configurations {
         exclude group: 'com.vaadin.external.google', module: 'android-json'
     }
 }
-// Bloqueio de Kotlin nos classpaths da aplicação e testes
-configurations.matching {
-    it.name in [
-        'compileClasspath', 'runtimeClasspath', 'testCompileClasspath', 'testRuntimeClasspath'
-    ]
-}.configureEach {
-    exclude group: 'org.jetbrains.kotlin'
-    exclude group: 'org.jetbrains.kotlinx'
-
-    resolutionStrategy.eachDependency { DependencyResolveDetails det ->
-        if (det.requested.group in ['org.jetbrains.kotlin', 'org.jetbrains.kotlinx']) {
-            throw new GradleException("Dependência Kotlin proibida detectada: ${det.requested}")
-        }
-    }
-}
 // Configuração das fontes de recursos, bibliotecas e arquivos
-project.sourceSets {
+sourceSets {
     main {
         resources {
             srcDirs += ['src/main/resources'] // mantém os recursos padrões
-            // inclui o conteúdo da pasta espolio no Classpath
-            srcDirs += [project.layout.dir( progPropsProv.map { 
-                new File(project.rootDir, it.getOrDefault('espolioDir', 'espolio')) 
-            })]
+            // inclui o conteúdo da pasta asseios no Classpath
+            srcDirs += [layout.settingsDirectory.dir(
+                progPropsProv.map { it.getOrDefault('asseiosDir', 'asseios') }
+            )]
             // inclui o ícone gerado
             srcDirs += tasks.named('webIco').map {
                 it.outputs.files.singleFile.parentFile.parentFile
@@ -60,7 +47,7 @@ project.sourceSets {
     }
 }
 // Manipulação do arquivo .classpath para o VSCODE parar de reclamar
-project.tasks.register('posBuildWeb') {
+tasks.register('posBuildWeb') {
     group = 'Web Actions'
     description = 'Sobrescreve o .classpath do VS Code incluindo dependências do projeto Web'
     mustRunAfter tasks.named('classes') // roda logo após a compilação do Java
@@ -68,9 +55,9 @@ project.tasks.register('posBuildWeb') {
     Provider<Set<FileSystemLocation>> compDepProv = configurations.named(
         'compileClasspath'
     ).flatMap { it.elements }
-    Provider<RegularFile> classpathArqProv = providers.provider { 
-        project.layout.projectDirectory.file('.classpath') 
-    }
+    Provider<RegularFile> classpathArqProv = objects.fileProperty().convention(
+        layout.projectDirectory.file('.classpath')
+    )
 
     inputs.files(compDepProv)
     inputs.file(classpathArqProv).optional()

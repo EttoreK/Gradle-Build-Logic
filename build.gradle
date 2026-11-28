@@ -21,5 +21,8 @@ tasks.named('validatePlugins') {
 }
 
 dependencies {
+    implementation libs.androidApp
+    implementation libs.androidBib
     implementation libs.proguard
+    implementation libs.springBoot
 }

@@ -50,11 +50,11 @@ abstract class AuxiliarSwiftConfiguradorXcode {
             return ['bash', '-c', cmds.join(' ')] 
         } else {
             // Extrai os valores das próprias propriedades nativas da Extension
-            String dono = getMacDono().get()
-            String sede = getMacSede().get()
-            String dirApp = getVmAppDir().get()
+            String dono = getMacDono().getOrNull()
+            String sede = getMacSede().getOrNull()
+            String dirApp = getVmAppDir().getOrNull()
 
-            if (!dono || !sede) {
+            if (!dono || !sede || !dirApp) {
                 throw new Exception('Credenciais não configuradas pra MacOs')
             }
             List<String> cmdRemotos = cmds.collect { vmCmds.getOrDefault(it, it) }

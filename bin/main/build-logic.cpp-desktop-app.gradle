@@ -3,12 +3,14 @@ Provider<Map<String, String>> progPropsProv = providers.of(AuxiliarGeralLeitorDe
     parameters.propertiesFile.set(layout.settingsDirectory.file(nomeArq))
 }
 // Define o diretório de build usando o nome dinâmico da pasta
-project.layout.buildDirectory.set(
-    layout.settingsDirectory.dir(progPropsProv.map { it.getOrDefault('buildDirCpp', 'build/cpp') })
-)
+layout.buildDirectory.set(layout.settingsDirectory.dir(
+    progPropsProv.map { it.getOrDefault('buildDirCppDkt', 'build/cpp/desktop') }
+))
 // Declaração dos plugins da app
 // plugins {}
-plugins.apply(libs.plugins.buildLogicCppGeral.get().getPluginId()) // configurações do android
+plugins.apply(libs.plugins.cppApp.get().getPluginId()) // permite a criação de aplicações c++
+plugins.apply(libs.plugins.cppUnitTest.get().getPluginId()) // permite o teste de aplicações c++
+plugins.apply(libs.plugins.buildLogicCppGeral.get().getPluginId()) // configurações gerais do C++
 plugins.apply(libs.plugins.buildLogicCppDesktopActions.get().getPluginId()) // ações de build
 
 Provider<String> projNomeProv = progPropsProv.map { it.getOrDefault('projNome', 'Modelo') }
@@ -26,7 +28,7 @@ application {
     
     privateHeaders.from 'src/main/headers'
     
-    File bibBase = file('src/main/bib')
+    File bibBase = layout.projectDirectory.dir('src/main/bib').asFile
     if (bibBase.exists()) {
         privateHeaders.from(bibBase) // Adiciona a raiz do bib
         bibBase.eachDirRecurse { subPasta ->
@@ -38,5 +40,5 @@ application {
 unitTest {
     baseName.set(projNomeProv.map { "${it}Test" }) // nome do produto de tests gerado
 }
-// Biblioteras para serem usadas no código
+// Bibliotecas para serem usadas no código
 // dependencies {}

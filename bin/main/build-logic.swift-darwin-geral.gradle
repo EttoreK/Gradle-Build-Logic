@@ -1,7 +1,7 @@
 // Declaração dos plugins
 // plugins {}
 // Atalhos para libs.versions.toml para facilitar a leitura
-Object xcConfig = project.extensions.create('xcConfig', AuxiliarSwiftConfiguradorXcode)
+Object xcConfig = extensions.create('xcConfig', AuxiliarSwiftConfiguradorXcode)
 // Definição de provedores para acesso à valores de configuração e diretórios
 Provider<Map<String, String>> localPropsProv = providers.of(AuxiliarGeralLeitorDePropriedades) { 
     String nomeArq = providers.gradleProperty('localPropertiesNome').getOrElse('local.properties')
@@ -15,12 +15,13 @@ Provider<Map<String, String>> secretoPropsProv = providers.of(AuxiliarGeralLeito
     String nomeArq = providers.gradleProperty('scrtPropertiesNome').getOrElse('secreto.properties')
     parameters.propertiesFile.set(layout.settingsDirectory.file(nomeArq))
 }
-xcConfig.projDir.convention(project.layout.projectDirectory)
-// xcConfig.rootDir.fileValue(project.rootDir)
+xcConfig.projDir.convention(layout.projectDirectory)
 xcConfig.rootDir.convention(layout.settingsDirectory)
 xcConfig.srcDir.convention(xcConfig.projDir.map { it.dir(AuxiliarSwiftConfiguradorXcode.MAIN_DIR) })
 xcConfig.nomeApp.convention(progPropsProv.map { it.getOrDefault('projNome', 'Modelo') })
-xcConfig.buildXDir.convention(progPropsProv.map { it.getOrDefault('buildDirXcode', 'build/xcode') })
+xcConfig.buildXDir.convention(progPropsProv.map { 
+    it.getOrDefault('buildDirSwiftDw', 'build/swift/darwin') 
+})
 xcConfig.macDono.convention(localPropsProv.map { it.get('mac.dono') })
 xcConfig.macSede.convention(localPropsProv.map { it.get('mac.sede') })
 xcConfig.macDir.convention(localPropsProv.map { it.get('mac.dir') })
@@ -46,5 +47,5 @@ xcConfig.testeUiNome.convention(progPropsProv.map { it.getOrDefault('swiftTestDi
 xcConfig.testeIntgNome.convention(progPropsProv.map { 
     it.getOrDefault('swiftTestDirIntg', 'IntgTests') 
 })
-// Biblioteras para serem usadas no código
+// Bibliotecas para serem usadas no código
 // dependencies {}
